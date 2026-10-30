@@ -1,19 +1,18 @@
-"""Start the FO3ID local servers together: Blaze server.py + http_config.py.
+"""Start the servers the game needs: http_config.py on 443 (https://APSEODESK172, plus the
+admin page on :8088) and messenger.py on :28002.
 
 Streams both outputs prefixed, and on Ctrl-C (or --selftest) terminates both so
-nothing is left listening.
+nothing is left listening. (It used to also start server.py and a second http_config.py
+on 8080; the client uses neither, and the two http_config.py fought over the admin port.)
 
 Usage:
-    python start_all.py [http_port=8080]
-    python start_all.py --selftest [http_port]   # start, verify alive ~2s, stop, exit
+    python start_all.py
+    python start_all.py --selftest   # start, verify alive ~3s, stop, exit
 """
 import os, subprocess, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-args = [a for a in sys.argv[1:]]
-selftest = "--selftest" in args
-args = [a for a in args if a != "--selftest"]
-http_port = args[0] if args else "8080"
+selftest = "--selftest" in sys.argv
 
 procs = []
 
@@ -44,14 +43,12 @@ def shutdown():
 
 
 def main():
-    start("server.py", [])                 # redirector :28000 + notification :28001
-    start("http_config.py", [http_port])   # config endpoints
     start("http_config.py", ["443", "--tls"])  # https://APSEODESK172 (hardcoded in fifazf.exe)
     start("messenger.py", [])  # :28002, address handed out by /info/my/services/messenger/2
-    print(f"[start_all] server.py + http_config.py (:{http_port}, :443 https) up. Ctrl-C to stop.")
+    print("[start_all] http_config.py (:443 https, admin :8088) + messenger.py (:28002) up. Ctrl-C to stop.")
 
     if selftest:
-        time.sleep(2)
+        time.sleep(3)
         alive = all(p.poll() is None for _, p in procs)
         shutdown()
         print("[start_all] selftest", "OK" if alive else "FAILED")

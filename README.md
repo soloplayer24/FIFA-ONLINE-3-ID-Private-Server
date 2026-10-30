@@ -49,15 +49,13 @@ Not done: online modes (ranked, friendly, King of the Hill), Road to World, leag
    ```
 
 4. Hosts file (as admin): `127.0.0.1 APSEODESK172`.
-5. Start the two servers:
+5. Build the launcher once (`launcher/fifalauncher.cs`, build line inside), then double-click
+   **`play.bat`**: it opens the server window (`python start_all.py` = `http_config.py 443
+   --tls` + `messenger.py`; close that window to stop the server) and starts the game without
+   the UAC prompt.
 
-   ```
-   python -I http_config.py 443 --tls
-   python messenger.py
-   ```
-
-6. Start the client with the server arguments (`launcher/fifalauncher.cs` builds a drop-in
-   launcher; `launch_game.ps1` does the same from PowerShell):
+6. By hand instead: `python start_all.py`, then start the client with the server arguments
+   (what `launcher/fifalauncher.exe` and `launch_game.ps1` pass):
 
    ```
    fifazf.exe -QUICKMATCH/SERVER=127.0.0.1:28000 -QUICKMATCH/PROTOCOL=tcp -QUICKMATCH/NOTISERVER=127.0.0.1:28001 -FIFA/LAUNCHER/PID=<pid> -PUBLISHER/GARENA/TOKEN=testtoken -LOCALE/PUBLISHING_REGION=ID -DUMPTRUCK/SERVER=127.0.0.1 region id token testtoken
