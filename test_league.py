@@ -197,6 +197,10 @@ def main():
         assert up["success"] and up["grade"] == 2 and [hc.iid(p) for p in copies(spid)] == [a] and ep() == ep1 - pv["enhancepay"]
         assert hc.grade_of(copies(spid)[0]) == 2 and hc.player_ovr(copies(spid)[0]) == hc.card_ovr(spid) + hc.GRADE_BOOST[2]
         assert not body(hc.route(f"/player/{a}/enhance/{a}/preview")("", b""))["result"]  # needs two cards
+        # bonus follows the tab's label: +6 target with +1 Kosong, +2 Normal, +4 High; +9 with +2 Low
+        rate = lambda t, m: hc.enhance_rate({"grade": t}, {"grade": m})
+        assert [round(rate(6, m), 4) for m in (1, 2, 4)] == [0.15, 0.1875, 0.225]
+        assert round(rate(9, 2), 4) == 0.022 and rate(2, 1) == 0.81
         # --- selling: a reserve at <= market price; the NPC buys at once, EP minus fee on collect
         band = body(hc.route(f"/transfer/price/{spid}/2")("", b""))
         assert band["upper"] == hc.card_price(spid, 2) and band["lower"] < band["upper"]

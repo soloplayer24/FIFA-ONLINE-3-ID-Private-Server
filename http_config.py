@@ -1900,10 +1900,13 @@ def enhance_pair(team, a, b):
 
 
 def enhance_rate(target, material):
-    """Base chance by target grade; a material of the same grade (or one less) raises it
-    (ENHANCEMENT_SUCCESSPROB_BONUS_HIGH / NORMAL)."""
+    """Base chance by target grade times the bonus the Upgrade tab shows as "Rasio bonus
+    keberhasilan" (TeamManagementPlayerEnhancementOldTabPage.updatePreviewText): material +1 or
+    lower = Kosong, at least 2/3 of the target grade = High, at least 1/3 = Normal, else Low.
+    The multipliers are ours (user: "Ya, samakan"); the original ones were server data."""
     tg, mg = grade_of(target), grade_of(material)
-    return min(1.0, ENHANCE_RATE[tg] * (1.5 if mg >= tg else 1.25 if mg == tg - 1 else 1.0))
+    bonus = 1.0 if mg <= 1 else 1.5 if mg >= tg * 2 / 3 else 1.25 if mg >= tg / 3 else 1.1
+    return min(1.0, ENHANCE_RATE[tg] * bonus)
 
 
 def enhance_cost(target):
