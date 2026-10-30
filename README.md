@@ -92,3 +92,8 @@ delete) against a fresh account. Needs `gamedata/fifadb.sqlite`.
 - **Wahyu** — project owner, testing in the real client.
 - **Claude** (Anthropic's AI assistant, via Claude Code) — reverse engineering and most of the
   server code, written together with the owner.
+
+## License
+
+[GNU GPL v3](LICENSE) for the code and documentation in this repository. FIFA Online 3, its
+client, data, assets and music belong to their respective owners and are not covered.
