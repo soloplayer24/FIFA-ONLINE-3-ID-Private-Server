@@ -20,7 +20,7 @@ https://APSEODESK172 (port 443) for /info/server/locale etc. — no launch arg
 overrides it — so run `http_config.py 443 --tls` and map APSEODESK172 to
 127.0.0.1 in the hosts file.
 """
-import bisect, collections, gzip, http.server, math, os, random, re, sqlite3, ssl, sys, threading, time
+import bisect, collections, functools, gzip, http.server, math, os, random, re, sqlite3, ssl, sys, threading, time
 from contextlib import closing
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -715,7 +715,10 @@ def coach_me(st, slot):
         "league": {"leagueid": roster_summary(teamid).get("league", {}).get("id", 0)},
         # limits.cups -> CupProxy.playMax (cups you can run at once); limits.players/baseplayers
         # -> the market's player-slot check (TransferPurchaseTabPage._limitPlayerCount)
-        "club": {}, "uimode": 0, "limits": {"cups": 3, "players": MAX_PLAYERS, "baseplayers": MAX_PLAYERS},
+        # limits.firstTeam: Skuad tab moveToFirstTeam reads it first and silently gives up when
+        # it is missing, so Tim Cadangan cards (packs, trades) could never reach Tim inti/Formasi
+        "club": {}, "uimode": 0, "limits": {"cups": 3, "players": MAX_PLAYERS, "baseplayers": MAX_PLAYERS,
+                                             "firstTeam": FIRST_TEAM_MAX},
         "transferfavorites": [], "currdivision": "",
         # playlimit {modeid: {playcount}}: Liga's Mulai/Simulasi buttons compare playcount with
         # PLAYLIMIT.maxplay; without the key playcount stays undefined and they stay disabled
@@ -1625,8 +1628,8 @@ def ep_transfer_top(position, query, body):
     rng = LINES.get(str(position or "").upper())
     where = f"AND p.preferredposition1 BETWEEN {rng.start} AND {rng.stop - 1}" if rng else ""
     with closing(_db()) as c:
-        both = c.execute(f"""SELECT p.spid, {POSOVR}, p.overallrating FROM players p JOIN permid m
-                             ON m.spid = p.spid AND m.licensed = 1 WHERE 1 {where}""").fetchall()
+        both = c.execute(f"""SELECT p.spid, {POSOVR}, p.overallrating FROM players p
+                             WHERE 1 {where}""").fetchall()  # every Market card, licensed or not
     _OVR.update((s, (o, d)) for s, o, d in both)
     rows = [(s, o) for s, o, _ in both]
     fa = fa_prices()
@@ -1854,11 +1857,12 @@ def trade_grades(gsum):
 
 
 def trade_pool():
-    """{client rating: [(spid, teamid)]} of Market cards (cached)."""
+    """{client rating: [(spid, teamid)]} of every Market card, any season (cached). It used to
+    take only cards licensed for the ID region, which left out most old and special seasons
+    (user: "trading munculkan semua playernya")."""
     if not _TRADE_POOL:
         with closing(_db()) as c:
-            for s, t, o in c.execute(f"""SELECT p.spid, p.teamid, {POSOVR} FROM players p
-                                         JOIN permid m ON m.spid = p.spid AND m.licensed = 1"""):
+            for s, t, o in c.execute(f"SELECT p.spid, p.teamid, {POSOVR} FROM players p"):
                 if on_market(s):
                     _TRADE_POOL.setdefault(o, []).append((s, t))
     return _TRADE_POOL
@@ -2129,7 +2133,24 @@ PACKS = {  # itemid (= shop icon): (name, pool)
     # every season
     82214007: ("Top 300", {"top": 300}),
     8223562: ("Best 30", {"top": 30}),
+    7675: ("All Season +8", {"grade": 8, "all": True}),  # user: "pack baru khusus all session grade 1-8"
 }
+# "All <season>" like All '07 for every season fifaaddict lists (user: "yang keluar cuma 07,
+# saya mau semua session"): (fifaaddict label, card season codes, closest shop icon). Codes
+# checked against fifaaddict's own listings (e.g. tco92 = 49, mufclegend = 55, cel = 31 + 33).
+FA_SEASONS = (
+    ("06", (6,), 45004), ("06U", (63,), 7618), ("06WC", (65,), 7622), ("08", (8,), 739), ("08E", (67,), 8157),
+    ("09", (9,), 45006), ("10", (10,), 45007), ("10U", (69,), 7618), ("10WC", (47,), 7622), ("11", (11,), 45004),
+    ("14", (14,), 15031), ("14WC", (77,), 880047), ("14T", (53,), 45026), ("15", (15,), 16001), ("16", (16,), 16001),
+    ("17", (88,), 45011), ("16EC", (35,), 8157), ("16TH", (45,), 8545), ("WB", (91,), 8334), ("WL", (93,), 8194),
+    ("UB", (28,), 8336), ("UL", (30,), 8335), ("EL", (27,), 8194), ("LP", (23,), 8329), ("CP", (22,), 8549),
+    ("CC", (24,), 8547), ("17TH", (44,), 8545), ("TCO92", (49,), 8546), ("MUA", (55,), 8547), ("ML", (71,), 8549),
+    ("TL", (51,), 8549), ("VL", (61,), 8549), ("CL", (89,), 8549), ("KL02", (95,), 8546), ("CEL", (31, 33), 8335),
+    ("U23", (29,), 8545), ("KXI", (97,), 8546), ("MUL", (48,), 8547), ("VS", (73,), 2000006),
+)
+PACKS.update({92000000 + codes[0]: (f"All {label}", {"seasons": codes, "icon": icon, "all": True})
+              for label, codes, icon in FA_SEASONS})
+PACKS[82214356] = ("All 07", {"season": 7, "all": True})  # the original All '07: every '07 card too
 PACK_BUNCHES = (1, 10)  # buy 1 or 10 (5% off)
 _PACK_POOL = {}
 
@@ -2141,11 +2162,13 @@ def pack_pool(itemid):
         lo, hi = POSITIONS.get(f.get("pos"), (0, 27))
         seasons = f.get("seasons") or ((f["season"],) if "season" in f else None)
         # "65+" = the rating the card shows once opened (POSOVR base + its grade's boost, as on fifaaddict)
+        # "all" packs take every Market card; the others only cards licensed for the ID region
+        # (permid), which leaves e.g. 37 of the 395 '06 cards
         with closing(_db()) as c:
-            rows = c.execute(f"""SELECT p.spid, {POSOVR} AS ovr FROM players p JOIN permid m ON m.spid = p.spid AND m.licensed = 1
+            rows = c.execute(f"""SELECT p.spid, {POSOVR} AS ovr FROM players p LEFT JOIN permid m ON m.spid = p.spid
                                  WHERE ovr >= ?1 AND p.preferredposition1 BETWEEN ?2 AND ?3
-                                 AND (?4 IS NULL OR p.leagueid = ?4)""",
-                             (f.get("ovr", 0) - GRADE_BOOST[1], lo, hi, f.get("league"))).fetchall()
+                                 AND (?4 IS NULL OR p.leagueid = ?4) AND (?5 OR m.licensed = 1)""",
+                             (f.get("ovr", 0) - GRADE_BOOST[1], lo, hi, f.get("league"), bool(f.get("all")))).fetchall()
         rows = sorted(((s, o) for s, o in rows if on_market(s) and (not seasons or s // 1000000 in seasons)),
                       key=lambda r: -r[1])[:f.get("top")]
         # a price far below the pool's (odd fifaaddict data, e.g. a 120k World Best card among 20M+
@@ -2168,10 +2191,19 @@ def pack_grade(itemid):
     return random.choices([g for g, _ in grades], [w for _, w in grades])[0]
 
 
+@functools.lru_cache(maxsize=None)
 def pack_price(itemid):
     pool, grades = pack_pool(itemid), pack_grades(itemid)
     gw = sum(w for _, w in grades)
     return sig3(sum(card_price(s, g) * w * gwt for s, w in pool for g, gwt in grades) / sum(w for _, w in pool) / gw)
+
+
+def warm_packs():
+    """Build every pack pool and price and the trade pools once (~20 s) so the first Shop or
+    Tukar request does not stall the client."""
+    for itemid in PACKS:
+        pack_price(itemid)
+    trade3_pool()
 
 
 SHOP_FREE = True  # user: "shop jadi 0 semua" -> every Shop product costs 0 EP
@@ -2192,7 +2224,8 @@ def item_def(itemid):
     name, f = PACKS[itemid]
     return {"itemid": itemid, "productid": itemid, "name": name, "category": "PLAYERPACK",
             "type": "LEAGUE" if "league" in f else "POSITION" if "pos" in f else "CUSTOM",
-            "unit": "COUNT", "itemicon": itemid, "currency": "ep",
+            "unit": "COUNT", "itemicon": f.get("icon", itemid), "currency": "ep",
+            **({"bundleicon": f["icon"]} if "icon" in f else {}),  # several packs share one icon
             "bunches": [{"bunch": n, "price": shop_price(pack_price(itemid), n)} for n in PACK_BUNCHES],
             **({"draw": {"year": 2017}} if f.get("season") == 88 else {})}
 
@@ -2569,7 +2602,8 @@ def daily_login(st, now=None):
 def bag_list(st):
     out = []
     for e in my_coach(st).get("bag", []):
-        icon = next((i["itemid"] for i in e["items"] if i["itemid"] != EP_ITEM), EP_ITEM)
+        icon = next((PACKS.get(i["itemid"], ("", {}))[1].get("icon", i["itemid"])
+                     for i in e["items"] if i["itemid"] != EP_ITEM), EP_ITEM)
         # ShopItemDescription.MakeEventItemDesc tooltip: msg = text, date (W3C) = "Tanggal diterima"
         out.append({"_id": e["_id"], "id": e["_id"], "type": e.get("type", "event"), "title": e["title"],
                     "msg": e.get("msg") or "Hadiah dari server.", "date": w3c(e["createdat"]),
@@ -2772,6 +2806,9 @@ class H(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # Windows SO_REUSEADDR lets a second copy bind the same port and split the client's
+    # requests between two servers; refuse instead (a second play.bat then just fails)
+    http.server.ThreadingHTTPServer.allow_reuse_address = os.name != "nt"
     srv = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), H)
     if TLS:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -2785,4 +2822,5 @@ if __name__ == "__main__":
         import admin
         admin.start(sys.modules[__name__], admin_port)
         print(f"admin page on http://127.0.0.1:{admin_port}/", flush=True)
+    threading.Thread(target=warm_packs, daemon=True, name="packs").start()
     srv.serve_forever()

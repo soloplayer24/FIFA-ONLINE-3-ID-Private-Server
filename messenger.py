@@ -110,5 +110,5 @@ if __name__ == "__main__":
     else:
         os.makedirs(os.path.dirname(LOG), exist_ok=True)
         print(f"messenger on 0.0.0.0:{PORT}, log -> {LOG}", flush=True)
-        socketserver.ThreadingTCPServer.allow_reuse_address = True
+        socketserver.ThreadingTCPServer.allow_reuse_address = os.name != "nt"  # no double bind on Windows
         socketserver.ThreadingTCPServer(("0.0.0.0", PORT), H).serve_forever()

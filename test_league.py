@@ -365,6 +365,9 @@ def main():
         gp = 15031  # '14 Top 30 +5
         assert hc.pack_price(gp) > 5 * sum(hc.card_price(s) * w for s, w in hc.pack_pool(gp)) / sum(w for _, w in hc.pack_pool(gp))
         assert hc.pack_grades(gp) == [(1, 5), (2, 4), (3, 3), (4, 2), (5, 1)] and hc.pack_grades(28007) == [(1, 1)]
+        # All Season +8: any Market card of any season at +1..+8
+        assert [g for g, _ in hc.pack_grades(7675)] == list(range(1, 9))
+        assert len({s // 1000000 for s, _ in hc.pack_pool(7675)}) > 20
         st = hc._state(); hc.my_coach(st)["ep"] = 10 ** 10; hc._save(st)
         assert post("/shop/purchase", {"shopid": gp, "productid": gp, "bunch": 1})["result"]  # 10 packs
         opened = [body(hc.route(f"/item/{next(i for i in items() if i['itemid'] == gp)['_id']}/use")("", b"{}"))["player"]
@@ -443,6 +446,8 @@ def main():
         assert body(hc.ENDPOINTS[f"/coach/{hc._default_slot(st)}/default"]("", b""))["result"]
         t = hc._state()["teams"][str(hc._default_slot(st))]
         assert hc.first_team_count(t) == hc.FIRST_TEAM_MAX and sum(bool(p.get("team2")) for p in t["players"]) == 9
+        # the Skuad tab's move to Tim inti reads limits.firstTeam (missing = it never asks)
+        assert hc.coach_me(hc._state(), hc._default_slot(hc._state()))["limits"]["firstTeam"] == hc.FIRST_TEAM_MAX
         assert all(not p.get("team2") for p in t["players"] if hc.in_squad(t, p))
         new = hc.add_player(t, 88158023)
         assert new["team2"]
