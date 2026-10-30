@@ -164,6 +164,7 @@ def ep_coaches(query, body):
     def entry(c):
         me = coach_me(st, c["slot"])
         return dict(c, summary=me["summary"], teamvalue={"val": sum(p["price"] for p in me["team"]["players"])},
+                    levelinfo=me["levelinfo"],
                     recoveryperiod=COACH_RECOVERY, **({"hideat": w3c(c["deleteat"])} if "deleteat" in c else {}))
     usable = {c["_id"] for c in st["coaches"] if c.get("state", "active") == "active"}
     return _json({"coachlist": [entry(c) for c in st["coaches"]],
@@ -179,6 +180,7 @@ def ep_new_team(slot, query, body):
     team = roster(int(req.get("id") or 0))["team"]
     team["players"] = [p for p in team["players"] if p["spid"] in chosen]
     team["squad"]["positions"] = [p for p in team["squad"]["positions"] if p["spid"] in chosen]
+    fix_formation(team, int(req.get("id") or 0))
     st = _state(); st["teams"][str(slot)] = team; _save(st)
     return _json({"result": True, "team": team})
 
@@ -513,6 +515,111 @@ def new_iid():
     return os.urandom(12).hex()  # Mongo-style
 
 
+# Levels (user: "akun dan pemain belum bisa dilevel up"). Both levelinfo = {level, exp within
+# the level, to = exp the level needs}. Players: the client adds level - 1 to every attribute
+# (PlayerListUtil.fillPlayerStaticData: totalBonus = level - 1 + grade boost; fifaaddict lists
+# LV.1-23); EXPPLAYER {level: {requiredplayerexp}}, max level = rows - 1 (getMaxLevel). Coach:
+# EXPCOACH {level: {totalexp}} = exp to finish levels 1..level (TeamManagementCoachExpScreen),
+# max from STATICVALUES/max_coachlevel. The original tables were server data; curves made up.
+PLAYER_MAX_LEVEL, COACH_MAX_LEVEL = 23, 100
+EXP_WIN, EXP_DRAW, EXP_LOSS = (300, 150), (200, 100), (100, 60)  # (coach, each player who played)
+
+
+def player_need(level):
+    return 100 * level
+
+
+def coach_need(level):
+    return 500 + 100 * (level - 1)
+
+
+EXPPLAYER = {str(lv): {"requiredplayerexp": player_need(lv)} for lv in range(1, PLAYER_MAX_LEVEL + 2)}
+EXPCOACH = {str(lv): {"totalexp": sum(coach_need(k) for k in range(1, lv + 1))} for lv in range(1, COACH_MAX_LEVEL + 1)}
+
+
+def make_levelinfo(info, need, top):
+    level = min(top, max(1, int((info or {}).get("level") or 1)))
+    return {"level": level, "exp": 0 if level >= top else int((info or {}).get("exp") or 0), "to": need(level)}
+
+
+def player_levelinfo(p):
+    return make_levelinfo(p.get("levelinfo"), player_need, PLAYER_MAX_LEVEL)
+
+
+def coach_levelinfo(coach):
+    return make_levelinfo(coach.get("levelinfo"), coach_need, COACH_MAX_LEVEL)
+
+
+def gain_exp(owner, n, need, top):
+    """Add n exp to owner["levelinfo"] (levels up, stops at top); (prev, current) levelinfo."""
+    prev = make_levelinfo(owner.get("levelinfo"), need, top)
+    level, exp = prev["level"], prev["exp"] + n
+    while level < top and exp >= need(level):
+        exp -= need(level)
+        level += 1
+    owner["levelinfo"] = {"level": level, "exp": 0 if level >= top else exp}
+    return prev, make_levelinfo(owner["levelinfo"], need, top)
+
+
+# Tim > Formasi combobox = coach team.formations (SquadScreenHandler.initializeFormationComboBox:
+# entry 0 is shown with the club's name; picking one runs changeFormation: positions[i] -> squad
+# slot i, offsets[i] -> starting x/y, then SquadUtil.getBestSquadPositions). Entries come from the
+# client's own formations table (data_0.big data/db/fifa_ng_db.db): teamid 1 holds the 33 common
+# shapes (their sweeper variants left out, like FORMATIONS_COMMON_WITHOUT_SWEEPER), other teams
+# their own. That table numbers positions without SW: client Enums.PLAYERPOSITION = code + 1 (GK 0).
+GAME = os.environ.get("FO3_GAME", r"D:\FO3ID\32795")
+FORMATIONS_CACHE = os.path.join(HERE, "gamedata", "formations.json")
+_FORMATIONS = None
+
+
+def formation_table():
+    """{"common": [entry], "teams": {teamid: entry}}; entry = {formationid, formationname,
+    positions, offsets}. Read once from the client, then cached in gamedata/formations.json."""
+    global _FORMATIONS
+    if _FORMATIONS is None:
+        try:
+            with open(FORMATIONS_CACHE) as f:
+                _FORMATIONS = json.load(f)
+        except OSError:
+            _FORMATIONS = {"common": [], "teams": {}}
+            try:
+                sys.path.insert(0, os.path.join(HERE, "tools", "re"))
+                import bigdir, eadb
+                big = os.path.join(GAME, "data", "data_0.big")
+                rows = eadb.rows(bigdir.read(big, "data/db/fifa_ng_db.db"),
+                                 bigdir.read(big, "data/db/fifa_ng_db-meta.xml").decode("utf-8", "replace"), "formations")
+            except (OSError, KeyError, ImportError) as e:
+                print("formations unavailable:", e, flush=True)
+                return _FORMATIONS
+            entry = lambda r: {"formationid": r["formationid"], "formationname": r["formationname"],
+                               "positions": [r[f"position{i}"] + (r[f"position{i}"] > 0) for i in range(11)],
+                               "offsets": [{"x": round(r[f"offset{i}x"], 4), "y": round(r[f"offset{i}y"], 4)} for i in range(11)]}
+            _FORMATIONS["common"] = sorted((entry(r) for r in rows if r["teamid"] == 1 and not r["issweeper"]),
+                                           key=lambda e: e["formationname"])
+            _FORMATIONS["teams"] = {str(r["teamid"]): entry(r) for r in rows if r["teamid"] != 1 and not r["issweeper"]}
+            os.makedirs(os.path.dirname(FORMATIONS_CACHE), exist_ok=True)
+            with open(FORMATIONS_CACHE, "w") as f:
+                json.dump(_FORMATIONS, f)
+    return _FORMATIONS
+
+
+def team_formations(teamid):
+    """The club's own formation first (else 4-4-2(1), the shape of the gen_teams XI), then the
+    common ones."""
+    t = formation_table()
+    own = t["teams"].get(str(teamid)) or next((e for e in t["common"] if e["formationname"] == "4-4-2(1)"), None)
+    return ([own] if own else []) + [e for e in t["common"] if own is None or e["formationid"] != own["formationid"]]
+
+
+def fix_formation(team, teamid):
+    """A stored team built by gen_teams carries formations = [its 4-4-2, id 1] and squad
+    .formation 1, which is 3-4-1-2 in the client's table: point it at the club's own entry."""
+    if team.pop("formations", None) is not None and team["squad"].get("formation") in (None, 1):
+        forms = team_formations(teamid)
+        if forms:
+            team["squad"]["formation"] = forms[0]["formationid"]
+
+
 def owned_team(raw):
     """A stored team ({players:[{spid,...}], squad:{positions,captain,kickers,...}}) in the
     shape the client expects for a club it can show and play with (coach.team, match side.team)."""
@@ -529,7 +636,7 @@ def owned_team(raw):
     # SECONDTEAM), set by /player/<id>/move/secondteam (stored as team2); Tukar Scout only
     # lists Tim Cadangan cards.
     team["players"] = [{**({} if p.get("team2") else {"state": "first"}), "grade": 0, "life": 100,
-                        "levelinfo": {"level": 1, "exp": 0}, **{k: v for k, v in p.items() if k != "team2"},
+                        **{k: v for k, v in p.items() if k != "team2"}, "levelinfo": player_levelinfo(p),
                         "_id": iid(p), "id": iid(p), "price": card_price(p["spid"], grade_of(p))}
                        for p in team["players"]]
     sq = dict(team["squad"])
@@ -589,6 +696,9 @@ def coach_me(st, slot):
     coach = next(c for c in st["coaches"] if c["slot"] == slot)
     team = owned_team(st["teams"].get(str(slot), {"squad": {"positions": [], "kickers": []}, "players": []}))
     teamid = coach["teamid"]
+    team["formations"] = team_formations(teamid)
+    if team["formations"] and team["squad"].get("formation") is None:
+        team["squad"]["formation"] = team["formations"][0]["formationid"]
     return {
         "id": coach["_id"], "name": coach["name"], "slot": slot, "teamid": coach["teamid"], "team": team,
         # CoachProxy.expandMoney parses money.mpdata.until as a W3C date; an exception there
@@ -601,7 +711,7 @@ def coach_me(st, slot):
         "igr": True, "vipDetail": VIP_DETAIL, "vipExpireAt": VIP_UNTIL, "vipStatus": {"VIP1": VIP_UNTIL},
         "sp": {"point": 0}, "gpdata": {"gp": 0}, "badges": [], "currentbadge": 0,
         # league.leagueid -> CoachProxy.leagueId: Single > Liga builds the league from it
-        "levelinfo": {"level": 1, "exp": 0, "to": 1000}, "statistics": {},
+        "levelinfo": coach_levelinfo(coach), "statistics": {},
         "league": {"leagueid": roster_summary(teamid).get("league", {}).get("id", 0)},
         # limits.cups -> CupProxy.playMax (cups you can run at once); limits.players/baseplayers
         # -> the market's player-slot check (TransferPurchaseTabPage._limitPlayerCount)
@@ -652,6 +762,7 @@ def ep_default_coach(slot, query, body):
     daily_login(st)  # first login of the day: today's reward goes to the Bag
     if str(slot) in st["teams"]:
         balance_first_team(st["teams"][str(slot)])
+        fix_formation(st["teams"][str(slot)], next(c["teamid"] for c in st["coaches"] if c["slot"] == slot))
     _save(st)
     return _json({"result": True, "resources": coach_me_resources(st, slot)})
 
@@ -1073,11 +1184,12 @@ def ep_l2_end(query, body):
     leader_ep = sum(e["reward"]["count"] for k in ("ratings", "goals", "assists", "tackles", "passes", "saves")
                     for e in leaders[k])
     base_ep = (LEAGUE_SIZE - rank + 1) * 2000
+    season_exp = (LEAGUE_SIZE - rank + 1) * 100
+    cprev, ccur = gain_exp(my_coach(st), season_exp, coach_need, COACH_MAX_LEVEL)
     out = {"result": True, "promotion": {"current": cur, "next": nxt},
            # setRewardRankExp: coach.prev/current/reward.total; setRewardRankEP: money.prev +
            # reward.detail.season; the sponsor/leader scenes read detail.sponsor/.leader
-           "rewards": {"coach": {"prev": {"level": 1, "exp": 0, "to": 1000}, "current": {"level": 1, "exp": 500, "to": 1000},
-                                 "reward": {"total": 500}},
+           "rewards": {"coach": {"prev": cprev, "current": ccur, "reward": {"total": season_exp}},
                        "money": {"prev": coach_me(st, _default_slot(st))["money"]["ep"],
                                  "reward": {"total": base_ep + sponsor_ep + leader_ep,
                                             "detail": {"season": base_ep, "sponsor": sponsor_ep, "leader": leader_ep}}}},
@@ -1132,18 +1244,33 @@ def ep_match_player_ready(mid, query, body):
     return match_step(mid, body, _player_ready)
 
 
-def match_reward(stats):
-    """match.reward for PostMatchRewardDefaultScene.onRewardReceived (paths it reads).
-    ponytail: EP goes to the coach balance (add_ep); exp is shown only (no level-up data yet)."""
+def match_reward(st, stats):
+    """match.reward for PostMatchRewardDefaultScene.onRewardReceived (paths it reads) and its
+    player list (PlayerRewardListItemRenderer: id, spid, prev, current, reward.detail.extra).
+    Credits EP, coach exp and exp for every player of mine in matchStats (in-match spid = the
+    card's player id, i.e. spid % 1e6). ponytail: flat exp by result + goals/assists."""
     me, opp = stats.get("myTeam", "home"), stats.get("opponentTeam", "away")
     g = lambda s: int((stats.get(s) or {}).get("score") or 0)
-    ep = 2000 if g(me) > g(opp) else 1000 if g(me) == g(opp) else 500
-    exp = ep // 10
+    won, drew = g(me) > g(opp), g(me) == g(opp)
+    ep = 2000 if won else 1000 if drew else 500
+    cexp, pexp = EXP_WIN if won else EXP_DRAW if drew else EXP_LOSS
+    reward = lambda n: {"total": n, "detail": {"base": n, "extra": 0}}
+    prev, cur = gain_exp(my_coach(st), cexp, coach_need, COACH_MAX_LEVEL)
+    team, done, players = st["teams"].get(str(_default_slot(st))) or {"players": []}, set(), []
+    for s in (stats.get(me) or {}).get("players") or []:
+        pid = int(s.get("spid") or 0) % 1000000
+        mine = [p for p in team["players"] if int(p["spid"]) % 1000000 == pid and iid(p) not in done]
+        p = next((p for p in mine if in_squad(team, p)), mine[0] if mine else None)
+        if p is None:
+            continue
+        n = pexp + 20 * int(s.get("goals") or 0) + 10 * int(s.get("assists") or 0)
+        pprev, pcur = gain_exp(p, n, player_need, PLAYER_MAX_LEVEL)
+        done.add(iid(p))
+        players.append({"id": iid(p), "spid": p["spid"], "prev": pprev, "current": pcur, "reward": reward(n)})
     return {"matchRewardBackType": 0, "extra": {"selected": {}, "availables": []}, "selected": [],
-            "coach": {"reward": {"total": exp, "detail": {"base": exp, "extra": 0}},
-                      "prev": {"level": 1, "exp": 0, "to": 1000}, "current": {"level": 1, "exp": exp, "to": 1000}},
-            "money": {"reward": {"total": ep, "detail": {"base": ep, "extra": 0}}},
-            "players": [], "missions": [], "exptankinfo": {}}
+            "coach": {"reward": reward(cexp), "prev": prev, "current": cur},
+            "money": {"reward": reward(ep)},
+            "players": players, "missions": [], "exptankinfo": {}}
 
 
 def ep_match_get(mid, query, body):
@@ -1162,7 +1289,7 @@ def ep_match_end(mid, query, body):
     out = {"result": True}
     if match is not None and match.get("stage") != "closed":  # credit once
         match["result"] = {k: v for k, v in req.items() if k != "_method"}
-        match["reward"] = match_reward(req)
+        match["reward"] = match_reward(st, req)
         add_ep(st, match["reward"]["money"]["reward"]["total"])
     cp = st.get("cup_pending") or {}
     if cp.get("id") == mid and cp.get("cupid") in (st.get("cups") or {}):
@@ -1808,17 +1935,21 @@ def ep_trade_contract(query, body):
 # differ in range and cooldown; meeting a scout's quest shifts the range up. Same popup and
 # /trade3/contract as Tukar v1 (the shared popup runs in trade3 mode while the feature is on).
 # --------------------------------------------------------------------------- #
+NO_LIMIT = 9_000_000_000_000_000  # "unlimited": below 2^53, so exact as an AS3 Number
 TRADE3_STATIC = {  # GET /trade3/staticvalues -> ScouterController.staticvalues
-    "playertrade3_limit": {"max_trade": 30_000_000_000, "max": 10_000_000_000},  # total EP / reward cap
-    "vvip_playertrade3_limit": {"max_trade": 30_000_000_000, "max": 10_000_000_000},
+    # total EP given / reward cap; user: "buat tidak terbatas" (was 30 / 10 billion EP: the tab
+    # warned "Hanya dapat memperoleh pemain maximum 10,000,000,000 EP")
+    "playertrade3_limit": {"max_trade": NO_LIMIT, "max": NO_LIMIT},
+    "vvip_playertrade3_limit": {"max_trade": NO_LIMIT, "max": NO_LIMIT},
     "playertrade3_normal": {str(n): 1 + (n >= 4) + (n >= 7) for n in range(2, 11)},  # offers by #players
     "playertrade3_effect_price": [10_000_000, 3_000_000, 1_000_000],  # popup premium effect tiers
 }
 SCOUTS = (  # (key = scoutid, string id, cooldown s, offer value x total, quest); always PC + VIP here
+    # no cooldowns (user: "buat scout tidak ada reset"; were 1 day / 1 hour / 1 hour)
     ("default_A01", "STR_SCOUTER_KR_DEFAULT_A01", 0, (0.8, 1.1), None),
-    ("default_B01", "STR_SCOUTER_KR_DEFAULT_B01", 86400, (0.9, 1.3), {"require_value": 100000}),
-    ("igr", "STR_SCOUTER_KR_IGR_A01", 3600, (0.9, 1.4), {"require_grade": 2, "require_grade_count": 2}),
-    ("vip", "STR_SCOUTER_KR_VIP_A01", 3600, (1.0, 1.5), {"require_season": "88", "require_season_count": 2}),
+    ("default_B01", "STR_SCOUTER_KR_DEFAULT_B01", 0, (0.9, 1.3), {"require_value": 100000}),
+    ("igr", "STR_SCOUTER_KR_IGR_A01", 0, (0.9, 1.4), {"require_grade": 2, "require_grade_count": 2}),
+    ("vip", "STR_SCOUTER_KR_VIP_A01", 0, (1.0, 1.5), {"require_season": "88", "require_season_count": 2}),
 )
 QUEST_BONUS = 0.2  # quest met: the offer value range moves up by this x total
 _T3_POOL = []
@@ -1854,11 +1985,13 @@ def quest_met(quest, give):
 
 
 def trade3_pool():
-    """[(price, spid, teamid)] of Market cards, cheapest first (cached)."""
+    """[(price, spid, teamid, grade)] of Market cards at every grade +1..+10, cheapest first
+    (cached). Grade +1 only capped an offer at the dearest +1 card (~20 billion EP), so a trade
+    of ~71 billion got far less back (user: "pertukaran tidak sebanding dengan nilai yang diawal")."""
     if not _T3_POOL:
         rows = [r for o in trade_pool().values() for r in o]
         card_ovrs([s for s, _ in rows])  # one bulk query instead of one per unpriced card
-        _T3_POOL.extend(sorted((card_price(s), s, t) for s, t in rows))
+        _T3_POOL.extend(sorted((card_price(s, g), s, t, g) for s, t in rows for g in range(1, 11)))
     return _T3_POOL
 
 
@@ -1874,8 +2007,8 @@ def trade3_props(give, scout, rng):
     for i, boost in enumerate([None] * normal + ["igr", "vip"]):
         target = min(TRADE3_STATIC["playertrade3_limit"]["max"], total * rng.uniform(lo, hi))
         k = bisect.bisect_left(pool, (target,))
-        price, s, t = rng.choice(pool[max(0, k - 10):k + 10])  # one of the 20 cards nearest in value
-        offer = {"spid": s, "grade": 1, "teamid": t, "price": price}
+        price, s, t, gr = rng.choice(pool[max(0, k - 10):k + 10])  # one of the 20 cards nearest in value
+        offer = {"spid": s, "grade": gr, "teamid": t, "price": price}
         if i == normal - 1 and normal > 1:
             offer["ep"] = sig3(max(1000, total * rng.uniform(0.05, 0.15)))
         if boost:
@@ -2562,6 +2695,8 @@ ENDPOINTS.update({
     "/trade3/staticvalues": lambda q, b: _json(TRADE3_STATIC), "/trade3/info": ep_trade3_info,
     "/trade3/notification": lambda q, b: _json({"result": True}),
     "/static/db/PLAYERTRADE": lambda q, b: _json({"playergrade": {str(s): trade_grades(s) for s in range(2, 101)}}),
+    "/static/db/EXPPLAYER": lambda q, b: _json(EXPPLAYER), "/static/db/EXPCOACH": lambda q, b: _json(EXPCOACH),
+    "/static/db/STATICVALUES/max_coachlevel": lambda q, b: _json(COACH_MAX_LEVEL),
     "/shop/list": lambda q, b: _json(shop_list(_state())), "/shop/list/STSHOP": ep_stshop,
     "/specifictarget": ep_specifictarget, "/monthlypack": ep_monthlypack,
     "/shop/purchase": ep_shop_purchase, "/static/cache/item": ep_static_item,

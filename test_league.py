@@ -44,6 +44,17 @@ def main():
         me = hc.my_teamid(st)
         # a new club's cards are +0: no market value, not sellable
         assert all(p["grade"] == 0 == p["price"] for p in hc.coach_me(st, 0)["team"]["players"])
+        # levels start at 1; exp tables: player LV.1-23 (24 rows), coach 1-100
+        assert hc.coach_me(st, 0)["levelinfo"] == {"level": 1, "exp": 0, "to": hc.coach_need(1)}
+        assert len(body(hc.ENDPOINTS["/static/db/EXPPLAYER"]("", b""))) == hc.PLAYER_MAX_LEVEL + 1
+        assert body(hc.ENDPOINTS["/static/db/STATICVALUES/max_coachlevel"]("", b"")) == hc.COACH_MAX_LEVEL
+        # Tim > Formasi: the club's own formation first (Barcelona has none: 4-4-2(1)), then the
+        # 33 common ones, each with 11 positions + offsets (needs the client's data_0.big)
+        forms = hc.coach_me(st, 0)["team"]["formations"]
+        if hc.formation_table()["common"]:
+            assert len(forms) == 33 and forms[0]["formationname"] == "4-4-2(1)"
+            assert all(len(f["positions"]) == 11 == len(f["offsets"]) and f["positions"][0] == 0 for f in forms)
+            assert hc.coach_me(st, 0)["team"]["squad"]["formation"] == forms[0]["formationid"]
         res = next(p for p in st["teams"]["0"]["players"] if not hc.in_squad(st["teams"]["0"], p))
         assert not body(hc.ENDPOINTS["/transfer/offer"]("", json.dumps({"playerobjectid": hc.iid(res), "price": 1000}).encode()))["result"]
         # club picker ("Tim lain"): nation -> league -> club lists agree; a club without a starter
@@ -79,7 +90,11 @@ def main():
                 assert rd["resources"][0]["body"]["stage"] == "playing"
                 stats = {"home": {"id": home, "score": 2}, "away": {"id": away, "score": 1}}
                 stats.update(myTeam="home" if home == me else "away", opponentTeam="away" if home == me else "home")
-                ep0 = hc.coach_me(hc._state(), hc._default_slot(hc._state()))["money"]["ep"]
+                cm = hc.coach_me(hc._state(), hc._default_slot(hc._state()))
+                ep0, lv0 = cm["money"]["ep"], cm["levelinfo"]
+                xi = [p for p in cm["team"]["squad"]["positions"] if p["pos"] < hc.POS_SUB]
+                # in-match player ids are the card's player id (spid % 1e6)
+                stats[stats["myTeam"]]["players"] = [{"spid": int(p["spid"]) % 1000000, "goals": int(i == 0)} for i, p in enumerate(xi)]
                 r = body(hc.route(f"/match/{m['id']}/end")("", json.dumps(stats).encode()))
                 body(hc.route(f"/match/{m['id']}/end")("", json.dumps(stats).encode()))  # a resend credits nothing
                 assert hc.coach_me(hc._state(), hc._default_slot(hc._state()))["money"]["ep"] == ep0 + (2000 if home == me else 500)
@@ -88,6 +103,14 @@ def main():
                 got = body(hc.route(f"/match/{m['id']}")("", b""))
                 assert got["result"]["home"]["score"] == 2 and got["stage"] == "closed"
                 assert got["reward"]["money"]["reward"]["total"] == (2000 if home == me else 500)
+                # exp: coach by result, each of my 11 players by result (+20 for a goal); kept
+                rw, cexp = got["reward"], hc.EXP_WIN[0] if home == me else hc.EXP_LOSS[0]
+                assert rw["coach"]["prev"] == lv0 and rw["coach"]["reward"]["total"] == cexp
+                assert hc.coach_me(hc._state(), 0)["levelinfo"] == rw["coach"]["current"]
+                assert len(rw["players"]) == 11 and rw["players"][0]["reward"]["total"] == rw["players"][1]["reward"]["total"] + 20
+                shown = {p["id"]: p["levelinfo"] for p in hc.coach_me(hc._state(), 0)["team"]["players"]}
+                assert all(shown[x["id"]] == x["current"] for x in rw["players"])
+                assert all((x["current"]["level"], x["current"]["exp"]) > (x["prev"]["level"], x["prev"]["exp"]) for x in rw["players"])
             assert r["leagueparam"]["round"] == rnd and len(r["leagueparam"]["leaguematches"]) == hc.LEAGUE_SIZE // 2
 
         lg = body(hc.ep_l2_me("", b""))
@@ -235,8 +258,10 @@ def main():
         pr = post("/trade3/proposal", {"id": "vip", "slotnum": 3, "playerids": pids})
         assert pr["result"] and len(pr["props"]) == hc.TRADE3_STATIC["playertrade3_normal"]["3"] + 2, pr
         assert all(total * 0.5 <= o["price"] <= total * 3 for o in pr["props"]), (total, pr["props"])
-        assert scouts()["vip"]["lock"] and scouts()["vip"]["cooltime"] and not scouts()["default_A01"]["lock"]
-        assert post("/trade3/proposal", {"id": "vip", "slotnum": 3, "playerids": pids})["reason"] == "TRADE2_ERROR_TOO_MANY_TRY"
+        # scouts have no cooldown: the same scout negotiates again at once
+        assert not any(s["lock"] or "cooltime" in s for s in scouts().values())
+        pr = post("/trade3/proposal", {"id": "vip", "slotnum": 3, "playerids": pids})
+        assert pr["result"]
         stale = [dict(pids[0], price=pids[0]["price"] + 1)] + pids[1:]
         assert post("/trade3/proposal", {"id": "default_A01", "slotnum": 0, "playerids": stale})["reason"] == "TRADE3_NOTICE_PLAYERPRICE03"
         n0 = len(team()["players"])
@@ -386,7 +411,7 @@ def main():
         assert A("daily_grant")["title"].endswith("hari ke-1") and A("daily_grant")["title"].endswith("hari ke-2")
         assert [b["items"] for b in body(hc.ENDPOINTS["/bag"]("", b""))] == [hc.reward_items(r) for r in tbl]
         st = hc._state(); hc.my_coach(st)["scout_used"] = {"vip": time.time()}; hc._save(st)
-        assert [s["lock"] for s in A("summary")["scouts"]] == [False, False, False, True]
+        assert [s["lock"] for s in A("summary")["scouts"]] == [False, False, False, False]  # no cooldowns
         A("scouts_reset"); assert not any(s["lock"] for s in A("summary")["scouts"])
         assert len(A("log", n=5)["lines"]) <= 5
         # HTTP: reads are GETs; a change needs POST + X-FO3-Admin (a cross-site form can't add it)

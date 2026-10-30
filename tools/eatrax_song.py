@@ -28,6 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(HERE, "re"))
 import bigdir
+from eadb import Table, db_tables, crc, u32
 from refpack import refpack
 
 BACKUP = os.path.join(ROOT, "backup", "eatrax")
@@ -35,10 +36,6 @@ DB, SBR, SBS = "data/db/fifa_ng_db.db", "audiodata/eatrax/eatrax_01.sbr", "audio
 BIGS = {"data_0.big": (DB,), "data_1.big": (SBR, SBS)}
 TRACKID = struct.pack("<I", 0xE8770F66)  # DSET field id of the TrackID column
 BLOCK = 2048  # samples per SPS data block: 8 KiB of PCM, the size of the bank's own blocks
-
-
-def u32(b, o):
-    return struct.unpack_from("<I", b, o)[0]
 
 
 def originals(game):
@@ -61,66 +58,7 @@ def originals(game):
     return files
 
 
-# --- EA DB ----------------------------------------------------------------------------------
-
-def crc(data):
-    """EA DB checksum: CRC-32 MSB-first, poly 0x04C11DB7, init 0xFFFFFFFF, no final xor."""
-    c = 0xFFFFFFFF
-    for b in data:
-        c ^= b << 24
-        for _ in range(8):
-            c = (c << 1 ^ 0x04C11DB7) & 0xFFFFFFFF if c & 0x80000000 else c << 1 & 0xFFFFFFFF
-    return c
-
-
-class Table:
-    """One DB table: 0x20 header + crc, 16-byte field descriptors, fixed-size bit-packed rows
-    (little-endian bits), crc of descriptors + rows. Tables with compressed strings unsupported."""
-
-    def __init__(self, raw):
-        self.head, self.rsize = bytearray(raw[:0x20]), u32(raw, 4)
-        nrec, p = struct.unpack_from("<H", raw, 0x10)[0], 0x24
-        self.fields = {}
-        for _ in range(raw[0x18]):
-            ty, bo, sn, dep = struct.unpack_from("<II4sI", raw, p)
-            self.fields[sn.decode()] = (ty, bo, dep)
-            p += 16
-        self.desc = raw[0x24:p]
-        self.rows = [raw[p + i * self.rsize:p + (i + 1) * self.rsize] for i in range(nrec)]
-        assert u32(raw, 0xC) == 0 and len(raw) == p + nrec * self.rsize + 4
-
-    def get(self, row, sn):
-        ty, bo, dep = self.fields[sn]
-        if ty == 0:  # string
-            return row[bo // 8:(bo + dep) // 8].split(b"\0")[0].decode("latin1")
-        return int.from_bytes(row, "little") >> bo & (1 << dep) - 1
-
-    def set(self, row, sn, value):
-        ty, bo, dep = self.fields[sn]
-        if ty == 0:
-            row = bytearray(row)
-            row[bo // 8:(bo + dep) // 8] = value.encode("latin1")[:dep // 8 - 1].ljust(dep // 8, b"\0")
-            return bytes(row)
-        v = int.from_bytes(row, "little") & ~((1 << dep) - 1 << bo) | value << bo
-        return v.to_bytes(self.rsize, "little")
-
-    def find(self, sn, value):
-        return next(r for r in self.rows if self.get(r, sn) == value)
-
-    def raw(self):
-        struct.pack_into("<HH", self.head, 0x10, len(self.rows), len(self.rows))
-        body = self.desc + b"".join(self.rows)
-        return bytes(self.head) + struct.pack("<I", crc(self.head)) + body + struct.pack("<I", crc(body))
-
-
-def db_tables(db):
-    n = u32(db, 0x10)
-    base = 0x18 + 8 * n + 4
-    names = [db[0x18 + 8 * i:0x1C + 8 * i] for i in range(n)]
-    starts = [base + u32(db, 0x1C + 8 * i) for i in range(n)] + [len(db)]
-    assert starts == sorted(starts)
-    return base, names, [db[starts[i]:starts[i + 1]] for i in range(n)]
-
+# --- EA DB (format in tools/re/eadb.py) -------------------------------------------------------
 
 def edit_db(db, title, artist, album):
     """The song takes songid 1 (intro); the old songid 1 moves to a new last songid."""

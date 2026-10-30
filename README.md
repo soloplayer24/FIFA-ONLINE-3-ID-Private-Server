@@ -21,6 +21,9 @@ Tested in the real client (Indonesian UI):
 - **Shop** with every tab (player packs, consumables, packages, MP Shop, monthly and chained
   packages, special bonus), pack opening with random grades, Item saya, Bag, daily login reward.
 - Always VIP + official PC warnet (IGR) perks, manager delete / restore, season '17 cards.
+- Formation list (the club's own + the game's 33 common formations, read from the client's
+  formations table) and manager / player levels: EXP after every match, player LV.1-23
+  (+1 to every attribute per level), manager LV.1-100.
 - Game sound and the EA Trax menu music; `tools/eatrax_song.py` puts your own song first in it.
 - Admin web page on http://127.0.0.1:8088/ (EP, players, packs, gifts, daily rewards, log).
 
@@ -72,7 +75,7 @@ Not done: online modes (ranked, friendly, King of the Hill), Road to World, leag
 | `gen_teams.py` | Starter squads and club summaries from `gamedata/fifadb.sqlite`. |
 | `tools/eatrax_song.py` | Puts a song first in the game's EA Trax menu music (edits `data_0.big` / `data_1.big` by appending; `--restore` puts the originals back). |
 | `tools/fa_sync.py` | fifaaddict.com price sync. |
-| `tools/re/` | Reverse-engineering helpers: `bigdir.py` (BIg4 archive tables), `refpack.py` (RefPack codec), `abc*.py` (AS3 bytecode parser / grep / schema miner), `gfxx.py` (UI SWFs), `memgrab.py`, `gamectl.ps1` (drive the client window for tests). |
+| `tools/re/` | Reverse-engineering helpers: `bigdir.py` (BIg4 archive tables), `refpack.py` (RefPack codec), `eadb.py` (EA "DB" database tables), `abc*.py` (AS3 bytecode parser / grep / schema miner), `gfxx.py` (UI SWFs), `memgrab.py`, `gamectl.ps1` (drive the client window for tests). |
 | `blaze.py`, `server.py`, `test_client.py`, `analyze_capture.py` | EA Blaze framing (Fire/TDF) and a loopback test server from the first phase of the project; the client turned out to use REST + the messenger instead. |
 | `analysis/` | Early client analysis scripts (strings, PE sections, network endpoints). |
 | `FO3ID-private-server.md`, `reports/` | Findings and progress reports (`reports/` is in Indonesian). |
