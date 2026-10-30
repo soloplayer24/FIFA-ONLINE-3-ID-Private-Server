@@ -2257,8 +2257,8 @@ PACKS = {  # itemid (= shop icon): (name, pool)
     # every season
     82214007: ("Top 300", {"top": 300}),
     8223562: ("Best 30", {"top": 30}),
-    # user: "pack baru khusus all session grade 1-8", then "all session pack buat jadi top 20"
-    7675: ("All Season Top 20 +8", {"top": 20, "grade": 8, "all": True}),
+    # user: "pack baru khusus all session grade 1-8", then "all session top 20 ganti menjadi top 50"
+    7675: ("All Season Top 50 +8", {"top": 50, "grade": 8, "all": True}),
 }
 # "All <season>" like All '07 for every season fifaaddict lists (user: "yang keluar cuma 07,
 # saya mau semua session"): (fifaaddict label, card season codes, closest shop icon). Codes
@@ -2273,10 +2273,10 @@ FA_SEASONS = (
     ("TL", (51,), 8549), ("VL", (61,), 8549), ("CL", (89,), 8549), ("KL02", (95,), 8546), ("CEL", (31, 33), 8335),
     ("U23", (29,), 8545), ("KXI", (97,), 8546), ("MUL", (48,), 8547), ("VS", (73,), 2000006),
 )
-# each one the season's 20 best cards (user: "all session pack buat jadi top 20")
-PACKS.update({92000000 + codes[0]: (f"{label} Top 20", {"seasons": codes, "icon": icon, "top": 20, "all": True})
+# each one the season's 50 best cards (user: "all session top 20 ganti menjadi top 50")
+PACKS.update({92000000 + codes[0]: (f"{label} Top 50", {"seasons": codes, "icon": icon, "top": 50, "all": True})
               for label, codes, icon in FA_SEASONS})
-PACKS[82214356] = ("07 Top 20", {"season": 7, "top": 20, "all": True})  # the original All '07 item
+PACKS[82214356] = ("07 Top 50", {"season": 7, "top": 50, "all": True})  # the original All '07 item
 PACK_BUNCHES = (1, 10)  # buy 1 or 10 (5% off)
 _PACK_POOL = {}
 
@@ -2399,7 +2399,7 @@ ITEMS = {  # itemid: (name, icon, type, effect, description)
             {"prizes": [(25, 28006), (25, 28007), (25, 28008), (25, ("ep", 300_000))]},
             "Hadiah acak: pak FW/MF/DF 60+ atau 300.000 EP."),
     50125: ("Kotak Metal", "ID50125GP", "ITEM_LOTTERY",
-            {"prizes": [(50, 82214356), (50, ("ep", 100_000))]}, "Hadiah acak: pak 07 Top 20 atau 100.000 EP."),
+            {"prizes": [(50, 82214356), (50, ("ep", 100_000))]}, "Hadiah acak: pak 07 Top 50 atau 100.000 EP."),
     200130000: ("Kotak Hadiah Perak", 200130000, "ITEM_LOTTERY",
                 {"prizes": [(40, ("ep", 200_000)), (30, 28009), (30, 82214068)]},
                 "Hadiah acak: 200.000 EP, pak GK 60+ atau World Best 300 2017."),
