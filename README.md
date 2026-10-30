@@ -92,7 +92,7 @@ delete) against a fresh account. Needs `gamedata/fifadb.sqlite`.
 
 ## Contributors
 
-- **Wahyu** — project owner, testing in the real client.
+- **SoloPlayer** — project owner, testing in the real client.
 - **Claude** (Anthropic's AI assistant, via Claude Code) — reverse engineering and most of the
   server code, written together with the owner.
 
