@@ -20,7 +20,7 @@ https://APSEODESK172 (port 443) for /info/server/locale etc. — no launch arg
 overrides it — so run `http_config.py 443 --tls` and map APSEODESK172 to
 127.0.0.1 in the hosts file.
 """
-import bisect, collections, functools, gzip, http.server, math, os, random, re, sqlite3, ssl, sys, threading, time
+import bisect, collections, functools, gzip, http.server, math, os, random, re, sqlite3, ssl, statistics, sys, threading, time
 from contextlib import closing
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -488,9 +488,8 @@ def sig3(x):
 
 
 def price_formula(ovr):
-    """Fallback for cards fifaaddict lists without a price: least-squares fit of its
-    Indonesia-server prices on the client rating (10,451 cards): exp(2.53 + 0.1113 * ovr),
-    65 ~ 17k, 75 ~ 53k, 85 ~ 160k."""
+    """Fallback without gamedata/fa_prices.json: an early least-squares fit of fifaaddict's
+    Indonesia-server prices on the client rating: exp(2.53 + 0.1113 * ovr), 65 ~ 17k, 85 ~ 160k."""
     return sig3(max(1000, math.exp(2.53 + 0.1113 * ovr)))
 
 
@@ -500,9 +499,40 @@ def on_market(spid):
     return int(spid) in fa if fa else int(spid) >= 1000000
 
 
+@functools.lru_cache(maxsize=None)
+def rating_prices():
+    """{client rating: EP price at +1}: the median fifaaddict price of all listed cards with that
+    rating (ratings with 5+ priced cards), each at least 5% above the rating below; {} without
+    fa_prices.json."""
+    fa = fa_prices()
+    by = {}
+    for s, o in card_ovrs([s for s, p in fa.items() if p]).items():
+        if o:
+            by.setdefault(o, []).append(fa[s])
+    med = {o: statistics.median(v) for o, v in by.items() if len(v) >= 5}
+    table, top = {}, 0
+    for o in range(min(med), max(med) + 1) if med else ():
+        top = max(top * 1.05, med.get(o, 0))
+        table[o] = top
+    return table
+
+
+def stat_price(ovr):
+    """EP price at +1 of a card rated ovr."""
+    t = rating_prices()
+    if len(t) < 6:
+        return price_formula(ovr)
+    lo, hi = min(t), max(t)
+    if ovr > hi:  # above every listed rating: keep the top five ratings' growth per point
+        return t[hi] * (t[hi] / t[hi - 5]) ** ((ovr - hi) / 5)
+    return t[max(lo, ovr)]
+
+
 def card_price(spid, grade=1):
-    base = fa_prices().get(int(spid)) or price_formula(card_ovr(spid))
-    return sig3(base * GRADE_PRICE[min(10, max(0, int(grade)))])  # +0 = 0 EP
+    """EP value from the card's rating and grade only (user: "fix harga yang tidak sesua
+    statsnya"): fifaaddict's own prices put scarce seasons (Legend, EL, UL, WL, CC, LP...) at up
+    to 50,000x a card of the same rating, and some '17 cards rated 76 at 1,000 EP."""
+    return sig3(stat_price(card_ovr(spid)) * GRADE_PRICE[min(10, max(0, int(grade)))])  # +0 = 0 EP
 
 
 def iid(p):
@@ -1632,9 +1662,7 @@ def ep_transfer_top(position, query, body):
                              WHERE 1 {where}""").fetchall()  # every Market card, licensed or not
     _OVR.update((s, (o, d)) for s, o, d in both)
     rows = [(s, o) for s, o, _ in both]
-    fa = fa_prices()
-    price = lambda s, ovr: fa.get(s) or price_formula(ovr)
-    spids = [s for s, ovr in sorted((r for r in rows if on_market(r[0])), key=lambda r: (-price(*r), r[0]))[:50]]
+    spids = [s for s, ovr in sorted((r for r in rows if on_market(r[0])), key=lambda r: (-r[1], r[0]))[:50]]
     return _json([market_offer(s) for s in spids])
 
 

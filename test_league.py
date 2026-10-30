@@ -365,6 +365,8 @@ def main():
         gp = 15031  # '14 Top 30 +5
         assert hc.pack_price(gp) > 5 * sum(hc.card_price(s) * w for s, w in hc.pack_pool(gp)) / sum(w for _, w in hc.pack_pool(gp))
         assert hc.pack_grades(gp) == [(1, 5), (2, 4), (3, 3), (4, 2), (5, 1)] and hc.pack_grades(28007) == [(1, 1)]
+        # prices follow the rating only (user: "fix harga yang tidak sesua statsnya")
+        assert all(hc.stat_price(o) < hc.stat_price(o + 1) for o in range(40, 95))
         # All Season +8: any Market card of any season at +1..+8
         assert [g for g, _ in hc.pack_grades(7675)] == list(range(1, 9))
         assert len({s // 1000000 for s, _ in hc.pack_pool(7675)}) > 20

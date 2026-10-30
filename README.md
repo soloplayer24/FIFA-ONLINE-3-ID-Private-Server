@@ -16,7 +16,8 @@ Tested in the real client (Indonesian UI):
 - Login → manager select / create (club picker over 501 licensed clubs) → lobby (FREEROAM).
 - **Single → Liga** (full season: calendar, matches, table, rewards, promotion) and **Cup**
   (draw, groups, knock-out, extra time, penalties).
-- **Market** (buy / sell, fifaaddict prices), **Upgrade** (grade +1…+10), **Tukar** and
+- **Market** (buy / sell; a card's price follows its rating and grade: the median fifaaddict
+  price of all cards with that rating), **Upgrade** (grade +1…+10), **Tukar** and
   **Tukar Scout** player trades, Tim inti / Tim Cadangan, squad and tactics saving.
 - **Shop** with every tab (player packs, consumables, packages, MP Shop, monthly and chained
   packages, special bonus), pack opening with random grades, Item saya, Bag, daily login reward.
