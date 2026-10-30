@@ -1,0 +1,4 @@
+{
+ "1": {"ai_hiddenstat_min": 1, "ai_hiddenstat_max": 3},
+ "2": {"ai_hiddenstat_min": 2, "ai_hiddenstat_max": 5}
+}

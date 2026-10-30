@@ -1,0 +1,4 @@
+{"Login": {"points": 10}, "Club_Join": {"points": 50}, "Club_Board": {"points": 5},
+ "Match_general": {"points": 2}, "Match_Club_Ranked": {"points": 5}, "Match_Club_Friendly": {"points": 3},
+ "Match_WorldCup_PvP": {"points": 3}, "Match_WorldCup_Live": {"points": 3}, "Match_Cup_PvE": {"points": 2},
+ "Match_League_league": {"points": 2}, "Match_League_league_Simulation": {"points": 1}}

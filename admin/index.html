@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin FO3ID</title>
+<style>
+  :root {
+    --page: #1a2530; --panel: #223140; --panel-2: #2a3b4c; --line: #34495d;
+    --ink: #e8eef4; --mute: #91a4b6; --gold: #f2c200; --gold-ink: #1a1400;
+    --ep: #5aa91a; --pc: #2563c6; --vip: #b81d24; --res: #2f8f3a; --danger: #d4483e;
+    --radius: 3px;
+    font-family: Bahnschrift, "DIN Alternate", "Arial Narrow", "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font-size: 15px; line-height: 1.45; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  /* top bar: the in-game HUD strip */
+  .hud { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 20px;
+         background: #13202b; border-bottom: 2px solid var(--gold); }
+  .hud h1 { margin: 0; font-size: 20px; font-weight: 600; font-stretch: condensed; letter-spacing: .01em; }
+  .hud .who { display: flex; align-items: center; gap: 8px; color: var(--mute); }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 2px; font-size: 12px; font-weight: 700; color: #fff; }
+  .badge.pc { background: var(--pc); } .badge.vip { background: var(--vip); }
+  .wallet { margin-left: auto; display: flex; align-items: baseline; gap: 8px; }
+  .coin { width: 14px; height: 14px; border-radius: 50%; background: var(--ep); box-shadow: inset 0 0 0 2px #2f6a06; align-self: center; }
+  .wallet strong { font-size: 30px; font-weight: 600; font-stretch: condensed; color: #8fd14f; }
+  .wallet small { color: var(--mute); }
+
+  .shell { display: grid; grid-template-columns: 210px 1fr; min-height: calc(100vh - 62px); }
+  nav { background: #1e2c38; border-right: 1px solid var(--line); padding: 12px 0; }
+  nav button { display: block; width: 100%; text-align: left; padding: 10px 20px; border: 0; background: none;
+               border-left: 3px solid transparent; cursor: pointer; color: var(--mute); }
+  nav button:hover { color: var(--ink); background: #243443; }
+  nav button[aria-selected="true"] { color: var(--ink); border-left-color: var(--gold); background: #263749; }
+  main { padding: 20px 24px 40px; max-width: 1180px; }
+  section[hidden] { display: none; }
+  h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; font-stretch: condensed; }
+  .lead { margin: 0 0 18px; color: var(--mute); max-width: 72ch; }
+  h3 { margin: 24px 0 8px; font-size: 16px; font-weight: 600; }
+
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); margin: 0 1px 1px 0; }
+  .facts div { background: var(--panel); padding: 12px 14px; border: 1px solid var(--line); margin: 0 -1px -1px 0; }
+  .facts dt { color: var(--mute); font-size: 13px; }
+  .facts dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; font-stretch: condensed; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 8px 0; }
+  label.f { display: grid; gap: 3px; font-size: 13px; color: var(--mute); }
+  label.check { display: flex; gap: 6px; align-items: center; color: var(--mute); font-size: 14px; }
+  input, select { background: #172330; border: 1px solid var(--line); border-radius: var(--radius); padding: 7px 9px; min-width: 0; }
+  input[type=number] { width: 130px; }
+  input.wide { width: min(360px, 100%); }
+  button.b { border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--radius); padding: 7px 12px; cursor: pointer; }
+  button.b:hover { border-color: var(--mute); }
+  button.b.primary { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); font-weight: 600; }
+  button.b.danger { color: #ffb4ad; border-color: #6b3330; }
+  button.b.small { padding: 3px 8px; font-size: 13px; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 500; color: var(--mute); background: #1d2a36; padding: 8px 10px; white-space: nowrap; }
+  td { padding: 6px 10px; border-top: 1px solid var(--line); vertical-align: middle; }
+  tr:hover td { background: #2636454d; }
+  td.num, th.num { text-align: right; }
+  .chip { display: inline-block; min-width: 46px; text-align: center; padding: 1px 6px; border-radius: 2px; font-size: 12px; font-weight: 700; background: #3a4b5c; }
+  .chip.SUB { background: #2d3d4c; color: #c9d6e2; } .chip.RES { background: var(--res); color: #fff; }
+  .chip.t2 { background: #6b5a1a; color: #fbe7a1; }
+  .muted { color: var(--mute); }
+
+  .status { position: sticky; top: 0; z-index: 2; margin: -20px -24px 16px; padding: 8px 24px; min-height: 36px;
+            background: #172430; border-bottom: 1px solid var(--line); color: var(--mute); }
+  .status.ok { color: #9fe06a; } .status.err { color: #ffb4ad; }
+  pre.log { margin: 0; padding: 12px; max-height: 60vh; overflow: auto; font: 12px/1.5 Consolas, "Cascadia Mono", monospace;
+            background: #111b24; border: 1px solid var(--line); border-radius: var(--radius); white-space: pre-wrap; word-break: break-all; }
+
+  @media (max-width: 760px) {
+    .shell { grid-template-columns: 1fr; }
+    nav { display: flex; overflow-x: auto; padding: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+    nav button { width: auto; white-space: nowrap; border-left: 0; border-bottom: 3px solid transparent; padding: 10px 14px; }
+    nav button[aria-selected="true"] { border-bottom-color: var(--gold); }
+    main { padding: 16px; }
+    .status { margin: -16px -16px 12px; padding: 8px 16px; }
+    .wallet { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: no-preference) { nav button { transition: background .12s, color .12s; } }
+</style>
+</head>
+<body>
+<header class="hud">
+  <h1>FO3ID admin</h1>
+  <span class="who"><span id="coachName">…</span><span class="badge pc">PC</span><span class="badge vip">VIP</span></span>
+  <span class="muted" id="serverTime"></span>
+  <div class="wallet" aria-label="Saldo EP"><span class="coin" aria-hidden="true"></span><strong id="epTop">…</strong><small>EP</small></div>
+</header>
+
+<div class="shell">
+  <nav role="tablist" aria-label="Menu admin">
+    <button role="tab" data-tab="ringkasan" aria-selected="true">Ringkasan</button>
+    <button role="tab" data-tab="pemain">Pemain klub</button>
+    <button role="tab" data-tab="tambah">Tambah pemain</button>
+    <button role="tab" data-tab="item">Pak &amp; Bag</button>
+    <button role="tab" data-tab="harian">Hadiah harian</button>
+    <button role="tab" data-tab="scout">Scout</button>
+    <button role="tab" data-tab="log">Log server</button>
+  </nav>
+
+  <main>
+    <div class="status" id="status" role="status" aria-live="polite">Perubahan langsung tersimpan di server; game menampilkannya setelah dibuka ulang atau setelah layar klub dimuat ulang.</div>
+
+    <section id="ringkasan">
+      <h2>Ringkasan klub</h2>
+      <p class="lead">Keadaan akun di server sekarang.</p>
+      <dl class="facts" id="facts"></dl>
+      <h3>Saldo EP</h3>
+      <form class="row" id="epForm">
+        <label class="f">Jumlah<input type="number" id="epValue" min="0" step="1000" required></label>
+        <button class="b primary" data-mode="add">Tambah EP</button>
+        <button class="b" data-mode="sub">Kurangi EP</button>
+        <button class="b" data-mode="set">Jadikan saldo ini</button>
+      </form>
+    </section>
+
+    <section id="pemain" hidden>
+      <h2>Pemain klub</h2>
+      <p class="lead">Ubah grade, pindahkan ke Tim Cadangan (dipakai Tukar Scout), atau keluarkan pemain cadangan. Pemain 18 skuad (MAIN/SUB) tidak bisa dikeluarkan dari sini.</p>
+      <div class="row"><label class="f">Cari di daftar<input class="wide" id="playerFilter" placeholder="nama pemain"></label></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Peran</th><th>Nama</th><th class="num">Musim</th><th class="num">OVR</th><th>Grade</th><th class="num">Harga EP</th><th>Tim</th><th></th></tr></thead>
+        <tbody id="playerRows"></tbody>
+      </table></div>
+    </section>
+
+    <section id="tambah" hidden>
+      <h2>Tambah pemain</h2>
+      <p class="lead">Cari kartu di database (rating sama seperti di game dan fifaaddict), lalu masukkan langsung ke klub atau kirim lewat Bag.</p>
+      <form class="row" id="searchForm">
+        <label class="f">Nama pemain<input class="wide" id="searchQ" minlength="2" placeholder="mis. Messi" required></label>
+        <label class="f">Grade<select id="searchGrade"></select></label>
+        <button class="b primary">Cari</button>
+      </form>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nama</th><th class="num">Musim</th><th>Posisi</th><th class="num">OVR</th><th class="num">Harga EP</th><th>Market</th><th></th></tr></thead>
+        <tbody id="searchRows"><tr><td colspan="7" class="muted">Ketik minimal 2 huruf nama pemain.</td></tr></tbody>
+      </table></div>
+    </section>
+
+    <section id="item" hidden>
+      <h2>Pak pemain &amp; Bag</h2>
+      <p class="lead">Pak masuk ke Item saya → Pak pemain. Hadiah Bag masuk ke Item saya → Items dan diambil dengan tombol Terima.</p>
+      <h3>Beri pak ke Item saya</h3>
+      <form class="row" id="packForm">
+        <label class="f">Pak<select id="packSel"></select></label>
+        <label class="f">Jumlah<input type="number" id="packCount" min="1" max="999" value="1"></label>
+        <button class="b primary">Beri pak</button>
+      </form>
+      <h3>Kirim hadiah ke Bag</h3>
+      <form class="row" id="bagForm">
+        <label class="f">Judul<input class="wide" id="bagTitle" value="Hadiah admin" maxlength="60"></label>
+        <label class="f">EP<input type="number" id="bagEp" min="0" step="1000" value="0"></label>
+        <label class="f">Pak<select id="bagPack"><option value="">tanpa pak</option></select></label>
+        <label class="f">Jumlah pak<input type="number" id="bagCount" min="1" max="999" value="1"></label>
+        <label class="f">spid pemain<input type="number" id="bagSpid" placeholder="opsional"></label>
+        <label class="f">Grade<select id="bagGrade"></select></label>
+        <button class="b primary">Kirim ke Bag</button>
+      </form>
+      <h3>Daftar pak di Shop</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Pak</th><th class="num">itemid</th><th class="num">Harga EP</th></tr></thead>
+        <tbody id="packRows"></tbody>
+      </table></div>
+    </section>
+
+    <section id="harian" hidden>
+      <h2>Hadiah login harian</h2>
+      <p class="lead">Login pertama tiap hari (WIB) memberi hadiah hari itu ke Bag. Login berturut-turut menaikkan hari; bolos sehari mengulang dari hari 1. Setelah hari terakhir, siklus kembali ke awal.</p>
+      <dl class="facts" id="dailyFacts"></dl>
+      <div class="row">
+        <button class="b" id="dailyGrant">Beri hadiah hari berikutnya sekarang</button>
+        <button class="b danger" id="dailyReset">Reset streak</button>
+      </div>
+      <h3>Tabel hadiah</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Hari</th><th>EP</th><th>Pak</th><th>Jumlah pak</th><th></th></tr></thead>
+        <tbody id="dailyRows"></tbody>
+      </table></div>
+      <div class="row">
+        <button class="b" id="dailyAdd">Tambah hari</button>
+        <button class="b primary" id="dailySave">Simpan tabel</button>
+      </div>
+    </section>
+
+    <section id="scout" hidden>
+      <h2>Scout (Tukar Scout)</h2>
+      <p class="lead">Scout yang baru dipakai terkunci sampai cooldown habis.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Scout</th><th>Status</th><th>Tersedia lagi</th><th>Quest</th></tr></thead>
+        <tbody id="scoutRows"></tbody>
+      </table></div>
+      <div class="row"><button class="b primary" id="scoutReset">Reset cooldown semua scout</button></div>
+    </section>
+
+    <section id="log" hidden>
+      <h2>Log server</h2>
+      <p class="lead">Baris terakhir dari captures/http_config.log.</p>
+      <div class="row">
+        <button class="b" id="logRefresh">Muat ulang log</button>
+        <label class="check"><input type="checkbox" id="logAuto"> Muat otomatis tiap 3 detik</label>
+      </div>
+      <pre class="log" id="logBox"></pre>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const fmt = n => Number(n || 0).toLocaleString("id-ID");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const SCOUT_NAMES = {default_A01: "Scout Amatir", default_B01: "Scout Profesional", igr: "Scout Cyberindo (PC)", vip: "Scout Spesial VIP"};
+const QUEST_TEXT = {require_value: "nilai pemain ≥", require_grade: "grade ≥", require_grade_count: "jumlah", require_season: "musim", require_season_count: "jumlah"};
+let packs = [], packsReady;
+
+async function api(name, body) {
+  const opt = body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json", "X-FO3-Admin": "1"}, body: JSON.stringify(body)};
+  const r = await fetch("/api/" + name, opt);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+function say(msg, kind) { const s = $("#status"); s.textContent = msg; s.className = "status " + (kind || ""); }
+async function act(fn, okMsg) {
+  try { await fn(); if (okMsg) say(okMsg, "ok"); await refreshTop(); }
+  catch (e) { say("Gagal: " + e.message, "err"); }
+}
+const gradeOpts = (val, lo = 1) => Array.from({length: 11 - lo}, (_, i) => i + lo)
+  .map(g => `<option value="${g}"${g == val ? " selected" : ""}>+${g}</option>`).join("");
+const packOpts = val => packs.map(p => `<option value="${p.itemid}"${p.itemid == val ? " selected" : ""}>${esc(p.name)}</option>`).join("");
+const facts = list => list.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
+
+async function refreshTop() {
+  const s = await api("summary");
+  $("#coachName").textContent = `${s.coach.name}, tim ${s.coach.teamid}`;
+  $("#epTop").textContent = fmt(s.coach.ep);
+  $("#serverTime").textContent = s.server_time;
+  return s;
+}
+
+const loaders = {
+  async ringkasan() {
+    const s = await refreshTop(), d = s.daily;
+    $("#facts").innerHTML = facts([
+      ["Pemain di klub", `${s.players} / ${s.max_players}`],
+      ["Pak di Item saya", fmt(s.packs)],
+      ["Hadiah di Bag belum diambil", fmt(s.bag)],
+      ["Login berturut-turut", `${d.streak || 0} hari`],
+      ["Hadiah hari ini", d.granted_today ? "sudah diberikan" : "menunggu login"],
+      ["VIP + PC warnet aktif sampai", s.vip_until],
+    ]);
+  },
+  async pemain() {
+    const {players} = await api("players");
+    const q = $("#playerFilter").value.trim().toLowerCase();
+    const rows = players.filter(p => !q || p.name.toLowerCase().includes(q)).sort((a, b) => b.ovr - a.ovr);
+    $("#playerRows").innerHTML = rows.map(p => `<tr>
+      <td><span class="chip ${p.role}">${p.role}</span>${p.team2 ? ' <span class="chip t2">Cadangan</span>' : ""}</td>
+      <td>${esc(p.name)} <span class="muted">${p.spid}</span></td>
+      <td class="num">${p.season}</td><td class="num">${p.ovr}</td>
+      <td><select data-grade="${p.id}" aria-label="Grade ${esc(p.name)}">${gradeOpts(p.grade, 0)}</select></td>
+      <td class="num">${fmt(p.price)}</td>
+      <td>${p.role === "RES" ? `<button class="b small" data-team="${p.id}" data-to="${p.team2 ? "first" : "second"}">${p.team2 ? "Ke Tim inti" : "Ke Tim Cadangan"}</button>` : '<span class="muted">Tim inti</span>'}</td>
+      <td>${p.role === "RES" ? `<button class="b small danger" data-remove="${p.id}" data-name="${esc(p.name)}">Keluarkan</button>` : ""}</td>
+    </tr>`).join("") || `<tr><td colspan="8" class="muted">Tidak ada pemain yang cocok.</td></tr>`;
+  },
+  async tambah() {},
+  async item() {
+    await packsReady;
+    $("#packRows").innerHTML = packs.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${p.itemid}</td><td class="num">${fmt(p.price)}</td></tr>`).join("");
+  },
+  async harian() {
+    await packsReady;
+    const d = await api("daily"), st = d.status;
+    $("#dailyFacts").innerHTML = facts([
+      ["Login berturut-turut", `${st.streak || 0} hari`], ["Total hari login", fmt(st.total)],
+      ["Terakhir dapat hadiah", st.last || "belum pernah"], ["Hari ini (WIB)", d.today],
+    ]);
+    renderDaily(d.table);
+  },
+  async scout() {
+    const s = await api("summary");
+    $("#scoutRows").innerHTML = s.scouts.map(sc => {
+      const q = sc.quest ? Object.entries(sc.quest).map(([k, v]) => `${QUEST_TEXT[k] || k} ${typeof v === "number" ? fmt(v) : v}`).join(", ") : "tanpa quest";
+      return `<tr><td>${esc(SCOUT_NAMES[sc.key] || sc.key)}</td><td>${sc.lock ? "terkunci" : "siap dipakai"}</td>
+        <td>${sc.cooltime ? new Date(sc.cooltime).toLocaleString("id-ID") : "sekarang"}</td><td class="muted">${esc(q)}</td></tr>`;
+    }).join("");
+  },
+  async log() {
+    const {lines} = await api("log?n=150");
+    const box = $("#logBox"); box.textContent = lines.join("\n"); box.scrollTop = box.scrollHeight;
+  },
+};
+
+function renderDaily(table) {
+  $("#dailyRows").innerHTML = table.map((r, i) => `<tr>
+    <td>Hari ${i + 1}</td>
+    <td><input type="number" min="0" step="1000" value="${r.ep || 0}" data-k="ep" aria-label="EP hari ${i + 1}"></td>
+    <td><select data-k="pack" aria-label="Pak hari ${i + 1}"><option value="">tanpa pak</option>${packOpts(r.pack)}</select></td>
+    <td><input type="number" min="1" max="99" value="${r.count || 1}" data-k="count" aria-label="Jumlah pak hari ${i + 1}"></td>
+    <td><button class="b small danger" data-drop="${i}">Hapus hari</button></td>
+  </tr>`).join("");
+}
+function readDaily() {
+  return [...$("#dailyRows").rows].map(tr => {
+    const v = k => tr.querySelector(`[data-k="${k}"]`).value;
+    return {ep: Number(v("ep")) || 0, pack: v("pack") ? Number(v("pack")) : null, count: Number(v("count")) || 1};
+  });
+}
+
+function show(tab) {
+  document.querySelectorAll("nav [role=tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === tab));
+  document.querySelectorAll("main section").forEach(s => s.hidden = s.id !== tab);
+  loaders[tab]().catch(e => say("Gagal memuat: " + e.message, "err"));
+}
+document.querySelectorAll("nav [role=tab]").forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
+
+$("#epForm").addEventListener("submit", e => e.preventDefault());
+$("#epForm").addEventListener("click", e => {
+  const mode = e.target.dataset.mode; if (!mode) return;
+  e.preventDefault();
+  const raw = $("#epValue").value, n = Number(raw);
+  if (raw === "" || !Number.isFinite(n) || n < 0) return say("Isi jumlah EP dulu.", "err");
+  const body = mode === "set" ? {set: n} : {add: mode === "sub" ? -n : n};
+  act(async () => { const r = await api("ep", body); await loaders.ringkasan(); say(`Saldo EP sekarang ${fmt(r.ep)}.`, "ok"); });
+});
+
+$("#playerFilter").addEventListener("input", () => loaders.pemain());
+$("#playerRows").addEventListener("change", e => {
+  const id = e.target.dataset.grade; if (!id) return;
+  act(async () => { await api("player_grade", {id, grade: Number(e.target.value)}); await loaders.pemain(); }, "Grade disimpan.");
+});
+$("#playerRows").addEventListener("click", e => {
+  const t = e.target;
+  if (t.dataset.team) act(async () => { await api("player_team", {id: t.dataset.team, team: t.dataset.to}); await loaders.pemain(); },
+                          t.dataset.to === "second" ? "Pemain pindah ke Tim Cadangan." : "Pemain kembali ke Tim inti.");
+  if (t.dataset.remove && confirm(`Keluarkan ${t.dataset.name} dari klub? Tidak bisa dibatalkan.`))
+    act(async () => { await api("player_remove", {id: t.dataset.remove}); await loaders.pemain(); }, `${t.dataset.name} dikeluarkan dari klub.`);
+});
+
+$("#searchForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  try {
+    const {rows} = await api("search?q=" + encodeURIComponent($("#searchQ").value.trim()));
+    $("#searchRows").innerHTML = rows.map(r => `<tr>
+      <td>${esc(r.name)} <span class="muted">${r.spid}</span></td><td class="num">${r.season}</td><td>${r.pos}</td>
+      <td class="num">${r.ovr}</td><td class="num">${fmt(r.price)}</td><td>${r.market ? "dijual" : '<span class="muted">tidak dijual</span>'}</td>
+      <td><button class="b small primary" data-add="${r.spid}" data-name="${esc(r.name)}">Masukkan ke klub</button>
+          <button class="b small" data-gift="${r.spid}" data-name="${esc(r.name)}">Kirim lewat Bag</button></td>
+    </tr>`).join("") || `<tr><td colspan="7" class="muted">Tidak ada kartu dengan nama itu.</td></tr>`;
+    say(`${rows.length} kartu ditemukan.`, "");
+  } catch (err) { say("Gagal mencari: " + err.message, "err"); }
+});
+$("#searchRows").addEventListener("click", e => {
+  const t = e.target, grade = Number($("#searchGrade").value);
+  if (t.dataset.add) act(() => api("player_add", {spid: Number(t.dataset.add), grade}), `${t.dataset.name} +${grade} masuk ke klub (cadangan).`);
+  if (t.dataset.gift) act(() => api("bag_send", {title: `Pemain: ${t.dataset.name}`, spid: Number(t.dataset.gift), grade}), `${t.dataset.name} +${grade} dikirim ke Bag.`);
+});
+
+$("#packForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const name = $("#packSel").selectedOptions[0].text, count = Number($("#packCount").value);
+  act(() => api("give_pack", {itemid: Number($("#packSel").value), count}), `${count}× ${name} masuk ke Item saya.`);
+});
+$("#bagForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const body = {title: $("#bagTitle").value, ep: Number($("#bagEp").value) || 0, pack: $("#bagPack").value ? Number($("#bagPack").value) : null,
+                count: Number($("#bagCount").value) || 1, spid: $("#bagSpid").value ? Number($("#bagSpid").value) : null, grade: Number($("#bagGrade").value)};
+  act(() => api("bag_send", body), `Hadiah "${body.title}" dikirim ke Bag.`);
+});
+
+$("#dailyRows").addEventListener("click", e => {
+  const i = e.target.dataset.drop; if (i === undefined) return;
+  const t = readDaily(); t.splice(Number(i), 1); renderDaily(t);
+});
+$("#dailyAdd").addEventListener("click", () => { const t = readDaily(); t.push({ep: 10000}); renderDaily(t); });
+$("#dailySave").addEventListener("click", () => act(async () => { await api("daily_set", {table: readDaily()}); await loaders.harian(); }, "Tabel hadiah harian disimpan."));
+$("#dailyGrant").addEventListener("click", () => act(async () => { const r = await api("daily_grant", {}); await loaders.harian(); say(`"${r.title}" dikirim ke Bag.`, "ok"); }));
+$("#dailyReset").addEventListener("click", () => { if (confirm("Reset streak login ke 0?")) act(async () => { await api("daily_reset", {}); await loaders.harian(); }, "Streak direset."); });
+$("#scoutReset").addEventListener("click", () => act(async () => { await api("scouts_reset", {}); await loaders.scout(); }, "Semua scout siap dipakai lagi."));
+$("#logRefresh").addEventListener("click", () => loaders.log());
+setInterval(() => { if ($("#logAuto").checked && !$("#log").hidden) loaders.log(); }, 3000);
+
+$("#searchGrade").innerHTML = gradeOpts(1); $("#bagGrade").innerHTML = gradeOpts(1);
+packsReady = api("packs").then(j => {
+  packs = j.packs;
+  $("#packSel").innerHTML = packOpts();
+  $("#bagPack").innerHTML = '<option value="">tanpa pak</option>' + packOpts();
+}).catch(e => say("Gagal memuat daftar pak: " + e.message, "err"));
+show("ringkasan");
+</script>
+</body>
+</html>

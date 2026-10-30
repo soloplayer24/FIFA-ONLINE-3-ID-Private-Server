@@ -1,0 +1,13 @@
+{
+  "0": {"grade": 0, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 0}},
+  "1": {"grade": 1, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 5}},
+  "2": {"grade": 2, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 6}},
+  "3": {"grade": 3, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 7}},
+  "4": {"grade": 4, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 8}},
+  "5": {"grade": 5, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 10}},
+  "6": {"grade": 6, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 12}},
+  "7": {"grade": 7, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 14}},
+  "8": {"grade": 8, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 17}},
+  "9": {"grade": 9, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 20}},
+  "10": {"grade": 10, "boost": {"PLAYER_ALLATTRIBUTES_ALL": 24}}
+}

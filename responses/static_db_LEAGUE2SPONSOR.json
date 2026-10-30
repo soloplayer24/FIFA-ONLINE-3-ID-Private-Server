@@ -1,0 +1,12 @@
+{
+ "sponsor": {
+  "1": {"name": "LEAGUE2_SPONSOR_NAME_01", "image": "103"},
+  "2": {"name": "LEAGUE2_SPONSOR_NAME_02", "image": "105"},
+  "3": {"name": "LEAGUE2_SPONSOR_NAME_03", "image": "108"}
+ },
+ "mission": {
+  "2": {"title": "League2_sponsor_title_02", "lv1": "3", "reward_lv1": "1", "progress": "League2_sponsor_progress_02"},
+  "3": {"title": "League2_sponsor_title_03", "lv1": "3", "reward_lv1": "2", "progress": "League2_sponsor_progress_03"},
+  "4": {"title": "League2_sponsor_title_04", "lv1": "2", "reward_lv1": "3", "progress": "League2_sponsor_progress_04"}
+ }
+}

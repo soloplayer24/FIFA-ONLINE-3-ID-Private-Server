@@ -1,0 +1,1 @@
+"function main() {}\nfunction onCreate() {}\nfunction onReset() {}\nfunction keyPressed(key) {}\nfunction onEventReceived(eventName, eventData) {}\n"

@@ -1,0 +1,11 @@
+{
+ "league2promote": {
+  "0": {"promote_rank": 3, "demote_rank": 8},
+  "1": {"promote_rank": 3, "demote_rank": 8},
+  "2": {"promote_rank": 3, "demote_rank": 8}
+ },
+ "league2dynamic": {
+  "1": {"ai_hiddenstat_min": 1, "ai_hiddenstat_max": 3},
+  "2": {"ai_hiddenstat_min": 2, "ai_hiddenstat_max": 5}
+ }
+}
