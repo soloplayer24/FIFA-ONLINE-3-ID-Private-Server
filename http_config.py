@@ -314,6 +314,8 @@ def match_side(raw, teamid, user=None, tactics=None):
     /game/my/tactic/all): native 0x949170 iterates it ({id, bus, cc, def, teammentality})."""
     team = owned_team(raw)
     team.update(teamid=teamid, summary=team_summary(team, teamid), kit=team_kit(teamid))
+    # team color for the user's side only: an AI side is a whole club (+4 for free)
+    team["teamcolors"] = active_teamcolors(team) if user else []
     # ready: a user side starts unready -- MatchController.sendReady skips the PUT .../ready
     # (no kick-off) when isMySideReady is already true; AI sides are always ready.
     return {"team": team, "squad": team["squad"], "players": [user] if user else [],
@@ -650,6 +652,99 @@ def fix_formation(team, teamid):
             team["squad"]["formation"] = forms[0]["formationid"]
 
 
+# Team color (user: "belum ada bonus stats pada saat memenuhi syarat tim/negara/ sesion").
+# TeamColorController (data/ui/libs/Module.big) runs only with features.teamcolor
+# (responses/account_base.json) and GET /static/info/teamcolor {teamColors, teamColorSpecials}.
+# A color: {teamcolorid, type club|nation|special, name, description (both go through
+# getLocalizedString, which returns an unknown key as-is), teamid (-1 = any club/nation),
+# boostgroups [{count_min, count_max, boosts [{type "ovr" = every attribute, amount}]}]}.
+# The server picks the colors the starting XI meets: team.teamcolors [{teamcolorid, boostindex,
+# teamid}] in coach/me and the user's match side (isValidTeamData needs the array). The client
+# then boosts the XI players that fit (availableTeamColor: club = staticdata.teamid or a club in
+# clubhistory, nation = nationality, special = spid in teamColorSpecials[teamid]); per player only
+# the best of club / nation / special applies, they do not stack. 17 and 131 are the client's own
+# "Single team" / "Satu Negara" (LANGUAGESTRING TEAMCOLOR_ATTRIBUTES_TEAM<id>).
+TC_CLUB, TC_NATION, TC_SEASON = 17, 131, 50000  # a season color is 50000 + its first season code
+
+
+def _tc_groups(*tiers):
+    return [{"count_min": lo, "count_max": hi, "boosts": [{"type": "ovr", "amount": n}]} for lo, hi, n in tiers]
+
+
+TC_CLUB_GROUPS = _tc_groups((4, 5, 1), (6, 7, 2), (8, 9, 3), (10, 11, 4))
+TC_GROUPS = _tc_groups((5, 6, 1), (7, 8, 2), (9, 11, 3))  # nation, season
+
+
+def tc_seasons():
+    """(label, card season codes) of every season color: fifaaddict's seasons and '07."""
+    return (("07", (7,)),) + tuple((label, codes) for label, codes, _ in FA_SEASONS)
+
+
+def tc_season_of(code):
+    """Season color id of a card season code (None: no color, e.g. engine cards)."""
+    return next((TC_SEASON + codes[0] for _, codes in tc_seasons() if code in codes), None)
+
+
+def tc_colors():
+    club = {"teamcolorid": TC_CLUB, "type": "club", "teamid": -1, "name": f"TEAMCOLOR_ATTRIBUTES_TEAM{TC_CLUB}",
+            "description": "Pemain dari klub yang sama", "boostgroups": TC_CLUB_GROUPS}
+    nation = {"teamcolorid": TC_NATION, "type": "nation", "teamid": -1, "name": f"TEAMCOLOR_ATTRIBUTES_TEAM{TC_NATION}",
+              "description": "Pemain dari negara yang sama", "boostgroups": TC_GROUPS}
+    return [club, nation] + [{"teamcolorid": TC_SEASON + codes[0], "type": "special", "teamid": TC_SEASON + codes[0],
+                              "name": f"Season {label}", "description": f"Pemain season {label}", "boostgroups": TC_GROUPS}
+                             for label, codes in tc_seasons()]
+
+
+def ep_teamcolor(query, body):
+    """GET /static/info/teamcolor (once per login). A season color lists its cards by spid; only
+    the cards I own are listed (every card would be ~500 KB): one bought later counts on the
+    server at once and gets its boost in the client from the next login."""
+    st = _state()
+    owned = {int(p["spid"]) for p in st["teams"].get(str(_default_slot(st)), {}).get("players", [])}
+    specials = {str(c["teamid"]): [] for c in tc_colors() if c["type"] == "special"}
+    for s in sorted(owned):
+        cid = tc_season_of(s // 1000000)
+        if cid:
+            specials[str(cid)].append(s)
+    return _json({"teamColors": tc_colors(), "teamColorSpecials": specials})
+
+
+@functools.lru_cache(maxsize=None)
+def tc_static():
+    """({spid: (playerid, teamid, nationality)}, {playerid: {former club ids}}) from fifadb."""
+    with closing(_db()) as c:
+        cards = {s: (p, t, n) for s, p, t, n in c.execute("SELECT spid, playerid, teamid, nationality FROM players")}
+        hist = {}
+        for p, t in c.execute("SELECT playerid, teamid FROM playerhistory"):
+            hist.setdefault(p, set()).add(t)
+    return cards, hist
+
+
+def active_teamcolors(team):
+    """team.teamcolors: the colors the starting XI meets, one per club / nation / season with
+    enough distinct players (as TeamColorController.updatePlayerCount counts them)."""
+    cards, hist = tc_static()
+    counts, seen = {}, set()
+    for p in team["squad"]["positions"]:
+        c = cards.get(int(p["spid"])) if p.get("pos", POS_SUB) < POS_SUB else None
+        if c is None or c[0] in seen:
+            continue
+        seen.add(c[0])
+        pid, teamid, nation = c
+        keys = [(TC_CLUB, t) for t in {teamid} | hist.get(pid, set())] + [(TC_NATION, nation)]
+        sid = tc_season_of(int(p["spid"]) // 1000000)
+        keys += [(sid, sid)] if sid else []
+        for k in keys:
+            counts[k] = counts.get(k, 0) + 1
+    out = []
+    for (cid, teamid), n in sorted(counts.items()):
+        groups = TC_CLUB_GROUPS if cid == TC_CLUB else TC_GROUPS
+        i = next((i for i, g in enumerate(groups) if g["count_min"] <= n <= g["count_max"]), None)
+        if i is not None and teamid > 0:
+            out.append({"teamcolorid": cid, "boostindex": i, "teamid": teamid})
+    return out
+
+
 def owned_team(raw):
     """A stored team ({players:[{spid,...}], squad:{positions,captain,kickers,...}}) in the
     shape the client expects for a club it can show and play with (coach.team, match side.team)."""
@@ -727,6 +822,7 @@ def coach_me(st, slot):
     team = owned_team(st["teams"].get(str(slot), {"squad": {"positions": [], "kickers": []}, "players": []}))
     teamid = coach["teamid"]
     team["formations"] = team_formations(teamid)
+    team["teamcolors"] = active_teamcolors(team)
     if team["formations"] and team["squad"].get("formation") is None:
         team["squad"]["formation"] = team["formations"][0]["formationid"]
     return {
@@ -2161,7 +2257,8 @@ PACKS = {  # itemid (= shop icon): (name, pool)
     # every season
     82214007: ("Top 300", {"top": 300}),
     8223562: ("Best 30", {"top": 30}),
-    7675: ("All Season +8", {"grade": 8, "all": True}),  # user: "pack baru khusus all session grade 1-8"
+    # user: "pack baru khusus all session grade 1-8", then "all session pack buat jadi top 20"
+    7675: ("All Season Top 20 +8", {"top": 20, "grade": 8, "all": True}),
 }
 # "All <season>" like All '07 for every season fifaaddict lists (user: "yang keluar cuma 07,
 # saya mau semua session"): (fifaaddict label, card season codes, closest shop icon). Codes
@@ -2176,9 +2273,10 @@ FA_SEASONS = (
     ("TL", (51,), 8549), ("VL", (61,), 8549), ("CL", (89,), 8549), ("KL02", (95,), 8546), ("CEL", (31, 33), 8335),
     ("U23", (29,), 8545), ("KXI", (97,), 8546), ("MUL", (48,), 8547), ("VS", (73,), 2000006),
 )
-PACKS.update({92000000 + codes[0]: (f"All {label}", {"seasons": codes, "icon": icon, "all": True})
+# each one the season's 20 best cards (user: "all session pack buat jadi top 20")
+PACKS.update({92000000 + codes[0]: (f"{label} Top 20", {"seasons": codes, "icon": icon, "top": 20, "all": True})
               for label, codes, icon in FA_SEASONS})
-PACKS[82214356] = ("All 07", {"season": 7, "all": True})  # the original All '07: every '07 card too
+PACKS[82214356] = ("07 Top 20", {"season": 7, "top": 20, "all": True})  # the original All '07 item
 PACK_BUNCHES = (1, 10)  # buy 1 or 10 (5% off)
 _PACK_POOL = {}
 
@@ -2301,7 +2399,7 @@ ITEMS = {  # itemid: (name, icon, type, effect, description)
             {"prizes": [(25, 28006), (25, 28007), (25, 28008), (25, ("ep", 300_000))]},
             "Hadiah acak: pak FW/MF/DF 60+ atau 300.000 EP."),
     50125: ("Kotak Metal", "ID50125GP", "ITEM_LOTTERY",
-            {"prizes": [(50, 82214356), (50, ("ep", 100_000))]}, "Hadiah acak: pak All '07 atau 100.000 EP."),
+            {"prizes": [(50, 82214356), (50, ("ep", 100_000))]}, "Hadiah acak: pak 07 Top 20 atau 100.000 EP."),
     200130000: ("Kotak Hadiah Perak", 200130000, "ITEM_LOTTERY",
                 {"prizes": [(40, ("ep", 200_000)), (30, 28009), (30, 82214068)]},
                 "Hadiah acak: 200.000 EP, pak GK 60+ atau World Best 300 2017."),
@@ -2759,6 +2857,7 @@ ENDPOINTS.update({
     "/static/db/PLAYERTRADE": lambda q, b: _json({"playergrade": {str(s): trade_grades(s) for s in range(2, 101)}}),
     "/static/db/EXPPLAYER": lambda q, b: _json(EXPPLAYER), "/static/db/EXPCOACH": lambda q, b: _json(EXPCOACH),
     "/static/db/STATICVALUES/max_coachlevel": lambda q, b: _json(COACH_MAX_LEVEL),
+    "/static/info/teamcolor": ep_teamcolor,
     "/shop/list": lambda q, b: _json(shop_list(_state())), "/shop/list/STSHOP": ep_stshop,
     "/specifictarget": ep_specifictarget, "/monthlypack": ep_monthlypack,
     "/shop/purchase": ep_shop_purchase, "/static/cache/item": ep_static_item,

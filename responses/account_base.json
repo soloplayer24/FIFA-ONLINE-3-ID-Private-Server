@@ -11,6 +11,7 @@
  "features": {
   "vip": {},
   "antifairplaychecker": {},
+  "teamcolor": {},
   "teammanagement": {
    "playermanagement": {
     "playerpool": {},

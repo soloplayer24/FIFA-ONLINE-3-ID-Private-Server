@@ -55,6 +55,16 @@ def main():
             assert len(forms) == 33 and forms[0]["formationname"] == "4-4-2(1)"
             assert all(len(f["positions"]) == 11 == len(f["offsets"]) and f["positions"][0] == 0 for f in forms)
             assert hc.coach_me(st, 0)["team"]["squad"]["formation"] == forms[0]["formationid"]
+        # team color: feature on, the colors table, and the XI's active colors (a fresh Barcelona
+        # XI = 11 Barcelona players: the top club tier); AI match sides get none
+        assert "teamcolor" in body(hc.ENDPOINTS["/account"]("", b""))["features"]
+        tc = body(hc.ENDPOINTS["/static/info/teamcolor"]("", b""))
+        assert {hc.TC_CLUB, hc.TC_NATION} <= {c["teamcolorid"] for c in tc["teamColors"]}
+        assert set(tc["teamColorSpecials"]) == {str(c["teamid"]) for c in tc["teamColors"] if c["type"] == "special"}
+        active = hc.coach_me(st, 0)["team"]["teamcolors"]
+        assert {"teamcolorid": hc.TC_CLUB, "boostindex": 3, "teamid": 241} in active, active
+        assert hc.match_side(st["teams"]["0"], 241, user={"id": "me"})["team"]["teamcolors"] == active
+        assert hc.match_side(st["teams"]["0"], 241)["team"]["teamcolors"] == []
         res = next(p for p in st["teams"]["0"]["players"] if not hc.in_squad(st["teams"]["0"], p))
         assert not body(hc.ENDPOINTS["/transfer/offer"]("", json.dumps({"playerobjectid": hc.iid(res), "price": 1000}).encode()))["result"]
         # club picker ("Tim lain"): nation -> league -> club lists agree; a club without a starter
@@ -367,9 +377,11 @@ def main():
         assert hc.pack_grades(gp) == [(1, 5), (2, 4), (3, 3), (4, 2), (5, 1)] and hc.pack_grades(28007) == [(1, 1)]
         # prices follow the rating only (user: "fix harga yang tidak sesua statsnya")
         assert all(hc.stat_price(o) < hc.stat_price(o + 1) for o in range(40, 95))
-        # All Season +8: any Market card of any season at +1..+8
+        # All Season Top 20 +8: the 20 best Market cards of any season at +1..+8; season packs = their top 20
         assert [g for g, _ in hc.pack_grades(7675)] == list(range(1, 9))
-        assert len({s // 1000000 for s, _ in hc.pack_pool(7675)}) > 20
+        best = max(hc.card_ovr(s) for s in hc.fa_prices())
+        assert len(hc.pack_pool(7675)) == 20 and max(hc.card_ovr(s) for s, _ in hc.pack_pool(7675)) == best
+        assert len(hc.pack_pool(92000088)) == 20 and {s // 1000000 for s, _ in hc.pack_pool(92000088)} == {88}
         st = hc._state(); hc.my_coach(st)["ep"] = 10 ** 10; hc._save(st)
         assert post("/shop/purchase", {"shopid": gp, "productid": gp, "bunch": 1})["result"]  # 10 packs
         opened = [body(hc.route(f"/item/{next(i for i in items() if i['itemid'] == gp)['_id']}/use")("", b"{}"))["player"]
