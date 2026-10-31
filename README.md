@@ -18,15 +18,29 @@ Tested in the real client (Indonesian UI):
   (draw, groups, knock-out, extra time, penalties).
 - **Market** (buy / sell; a card's price follows its rating and grade: the median fifaaddict
   price of all cards with that rating), **Upgrade** (grade +1…+10), **Tukar** and
-  **Tukar Scout** player trades, Tim inti / Tim Cadangan, squad and tactics saving.
+  **Tukar Scout** player trades (every Market card, not only the region's licensed ones),
+  Tim inti / Tim Cadangan, squad and tactics saving.
 - **Shop** with every tab (player packs, consumables, packages, MP Shop, monthly and chained
   packages, special bonus), pack opening with random grades, Item saya, Bag, daily login reward.
+  Extra packs: **All Season +8** (any season, +1…+8) and one pack for '07 and every season
+  fifaaddict lists.
 - Always VIP + official PC warnet (IGR) perks, manager delete / restore, season '17 cards.
 - Formation list (the club's own + the game's 33 common formations, read from the client's
   formations table) and manager / player levels: EXP after every match, player LV.1-23
   (+1 to every attribute per level), manager LV.1-100.
 - Game sound and the EA Trax menu music; `tools/eatrax_song.py` puts your own song first in it.
 - Admin web page on http://127.0.0.1:8088/ (EP, players, packs, gifts, daily rewards, log).
+
+Added, passing the tests but not yet checked in the client:
+
+- **Team color**: the starting XI gets an OVR bonus for players from the same club (4-5 players
+  +1 up to 10-11 +4), nation or season (5-6 +1 up to 9-11 +3); per player only the best one
+  counts.
+- **Upgrade chance**: a base chance by target grade, times the "Rasio bonus keberhasilan" label
+  the Upgrade tab shows from the material's grade (Kosong x1, Low x1.1, Normal x1.25,
+  High x1.5). A failed upgrade from +5 or higher drops one grade.
+- **Top 200 packs**: the extra packs now give their season's 200 best cards ("17 Top 200",
+  "07 Top 200", …); **All Season Top 200 +8** gives the 200 best of any season.
 
 Not done: online modes (ranked, friendly, King of the Hill), Road to World, league simulation.
 
